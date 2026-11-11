@@ -4,9 +4,7 @@
 
 [Русская версия](README.ru.md)
 
-<!-- After publishing, replace OWNER/REPO and uncomment:
-[![tests](https://github.com/OWNER/REPO/actions/workflows/tests.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/tests.yml)
--->
+[![tests](https://github.com/Traible/Migrator/actions/workflows/tests.yml/badge.svg)](https://github.com/Traible/Migrator/actions/workflows/tests.yml)
 
 Migrator is a small PowerShell tool for moving a person to a new computer or
 a fresh Windows installation. It packs documents, desktop, browser profiles
