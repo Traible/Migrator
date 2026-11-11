@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- **Resizing the window during a backup or restore no longer leaves copies of the progress line on screen.** When the window gets narrower, the terminal re-wraps the line already drawn over several rows; Migrator used to return only to the start of the last one. It now works out how many rows the previous line takes at the current width, goes back to the first and erases from there. Terminals without escape sequences keep the old overwrite with spaces.
+- **Resizing the window during a backup or restore no longer leaves copies of the progress line on screen.** When the window width changes, the terminal re-wraps the line already drawn and its picture stops matching the cursor position the program sees, so the leftovers cannot be erased by moving the cursor back. Migrator now clears the screen on a width change and continues under a short header. Terminals without escape sequences keep the old overwrite with spaces.
 
 ## 2.2.1 — 2026-11-11
 

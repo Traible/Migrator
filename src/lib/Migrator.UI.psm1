@@ -445,6 +445,7 @@ function New-ProgressState {
         LastPercent  = -1.0
         NextLogStep  = 10
         LastLength   = 0
+        LastWidth    = 0
         SpinIndex    = 0
         Eta          = New-EtaEstimator -TotalBytes $TotalBytes -TotalFiles $TotalFiles
         # Samples for the current speed: (seconds, bytes) over the last seconds
@@ -586,13 +587,13 @@ function Update-ProgressState {
 
 function Write-ProgressText {
     param([Parameter(Mandatory)]$State, [Parameter(Mandatory)][string]$Line)
-    $width = 0
-    try { $width = [Console]::WindowWidth - 1 } catch { }
+    Reset-ProgressScreen -State $State
+    $width = $State.LastWidth - 1
     if ($width -gt 10 -and $Line.Length -gt $width) { $Line = $Line.Substring(0, $width) }
 
     if (Test-VirtualTerminal) {
-        Write-Host ((Get-ProgressRewind -Length $State.LastLength -WindowWidth ($width + 1)) + $Line) `
-            -NoNewline -ForegroundColor $script:Theme.Accent
+        # Carriage return, erase to the end of the row, then the new text.
+        Write-Host ("`r" + [char]27 + '[K' + $Line) -NoNewline -ForegroundColor $script:Theme.Accent
         $State.LastLength = $Line.Length
     } else {
         # No escape sequences: overwrite the previous text with spaces.
@@ -606,37 +607,40 @@ function Test-VirtualTerminal {
     try { return [bool]$Host.UI.SupportsVirtualTerminal } catch { return $false }
 }
 
-function Get-ProgressRewind {
-    # Escape sequence that returns to the start of the progress line and
-    # erases it. When the window was made narrower, the terminal re-wraps the
-    # line that is already on screen over several rows and the cursor ends up
-    # on the last of them; a bare carriage return would leave the upper rows
-    # behind as garbage.
-    param([int]$Length, [int]$WindowWidth)
+function Reset-ProgressScreen {
+    # When the window width changes, the terminal re-wraps what is already on
+    # screen, and its picture no longer matches the cursor position this
+    # process sees: moving the cursor back cannot remove the leftovers. The
+    # screen is cleared and started again with a short header instead.
+    param([Parameter(Mandatory)]$State)
+    $width = 0
+    try { $width = [Console]::WindowWidth } catch { }
+    $changed = ($State.LastWidth -gt 0 -and $width -gt 0 -and $width -ne $State.LastWidth)
+    if ($width -gt 0) { $State.LastWidth = $width }
+    if (-not $changed -or $State.LastLength -le 0 -or -not (Test-VirtualTerminal)) { return }
+
     $esc = [char]27
-    $rowsAbove = 0
-    if ($Length -gt 0 -and $WindowWidth -gt 0) {
-        $rowsAbove = [int][Math]::Ceiling($Length / $WindowWidth) - 1
-    }
-    $up = if ($rowsAbove -gt 0) { "$esc[${rowsAbove}A" } else { '' }
-    return "`r" + $up + "$esc[J"
+    Write-Host "$esc[H$esc[2J$esc[3J" -NoNewline
+    Write-Banner -Subtitle $State.Activity
+    Write-Host ''
+    $State.LastLength = 0
 }
 
 function Complete-ProgressState {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$State)
     if ($State.Interactive -and $State.LastLength -gt 0) {
-        if (Test-VirtualTerminal) {
-            $width = 0
-            try { $width = [Console]::WindowWidth } catch { }
-            Write-Host (Get-ProgressRewind -Length $State.LastLength -WindowWidth $width) -NoNewline
-        } else {
-            Write-Host ("`r" + (' ' * $State.LastLength) + "`r") -NoNewline
+        Reset-ProgressScreen -State $State
+        if ($State.LastLength -gt 0) {
+            if (Test-VirtualTerminal) {
+                Write-Host ("`r" + [char]27 + '[K') -NoNewline
+            } else {
+                Write-Host ("`r" + (' ' * $State.LastLength) + "`r") -NoNewline
+            }
         }
         $State.LastLength = 0
     }
 }
-
 Export-ModuleMember -Function @(
     'Get-UiTheme'
     'Test-InteractiveConsole'
@@ -661,6 +665,5 @@ Export-ModuleMember -Function @(
     'New-ProgressState'
     'Format-ProgressLine'
     'Update-ProgressState'
-    'Get-ProgressRewind'
     'Complete-ProgressState'
 )
