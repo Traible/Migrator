@@ -35,8 +35,7 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 $include = @(
     'src', 'tests', 'build'
     'Migrator.bat', 'Get Tools.bat', 'Get-Tools.ps1'
-    'Create Shortcuts.bat', 'Create-Shortcuts.ps1', 'System Restore Tools.bat'
-    'backup_restore.ico'
+    'System Restore Tools.bat'
     'README.md', 'README.ru.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY.md'
 )
 foreach ($name in $include) {

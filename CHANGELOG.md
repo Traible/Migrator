@@ -26,7 +26,7 @@
 
 ### Removed
 
-- Dism++ launcher and shortcut.
+- Dism++ launcher, desktop/Start-menu shortcut scripts and their icons.
 - `UseEmoji`, `RarPath`, `HashType`, `EstimateSourceSize` settings. `Compression` is now a 7-Zip level `0`–`9`.
 - The hard "less than 2 GB free" stop; the free-space check compares with the real estimate.
 
@@ -36,7 +36,7 @@
 
 ### Tests
 
-- 94 smoke tests: both locales (same keys, same placeholders, every key used in code is defined), masks, junctions, a locked source file, a locked target file, damaged and truncated archives, cloud-folder policy, Russian output, robocopy log parsing.
+- 93 smoke tests: both locales (same keys, same placeholders, every key used in code is defined), masks, junctions, a locked source file, a locked target file, damaged and truncated archives, cloud-folder policy, Russian output, robocopy log parsing.
 
 ## 2.0.3 — 2026-11-10
 

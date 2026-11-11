@@ -187,7 +187,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 94 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 93 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

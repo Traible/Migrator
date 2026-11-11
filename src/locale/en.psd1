@@ -93,7 +93,6 @@
     'm.menu.restore.hint' = 'From a Migrator archive or from Windows.old after reinstalling Windows'
     'm.menu.folder' = 'Open the backups folder'
     'm.menu.system' = 'Windows recovery tools'
-    'm.menu.shortcuts' = 'Create desktop and Start menu shortcuts'
     'm.menu.tools' = 'Check required tools'
     'm.menu.about' = 'Help / About'
     'm.menu.admin' = 'Restart as Administrator'

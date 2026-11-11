@@ -191,7 +191,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 94 проверки, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 93 проверки, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 

@@ -93,7 +93,6 @@
     'm.menu.restore.hint' = 'Из архива Migrator или из Windows.old после переустановки Windows'
     'm.menu.folder' = 'Открыть папку с копиями'
     'm.menu.system' = 'Средства восстановления Windows'
-    'm.menu.shortcuts' = 'Создать ярлыки на рабочем столе и в меню «Пуск»'
     'm.menu.tools' = 'Проверить нужные программы'
     'm.menu.about' = 'Справка / О программе'
     'm.menu.admin' = 'Перезапустить от имени администратора'
