@@ -181,6 +181,40 @@ function Get-ArchiveOutcome {
     return 'Failed'
 }
 
+$script:StaleFilesChecked = $false
+
+function Remove-StaleArchiverFile {
+    # Deletes temporary files left by a Migrator run that was closed half-way
+    # (the window was closed during a backup, so nothing could clean up).
+    # A file is stale when the process whose id is in its name no longer
+    # exists, or when that id now belongs to a process started after the file
+    # was created. Returns the number of files removed.
+    [CmdletBinding()]
+    param([string]$Path = $env:TEMP)
+
+    $removed = 0
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return $removed }
+    $files = @(Get-ChildItem -LiteralPath $Path -Filter 'migrator-*' -File -ErrorAction SilentlyContinue)
+    foreach ($file in $files) {
+        if ($file.Name -notmatch '^migrator-(?:7z|list|ls)-(\d+)-[0-9a-f]{32}\.') { continue }
+        $ownerId = [int]$Matches[1]
+        if ($ownerId -eq $PID) { continue }
+        $alive = $false
+        try {
+            $owner = Get-Process -Id $ownerId -ErrorAction Stop
+            $alive = $true
+            try {
+                if ($owner.StartTime -gt $file.CreationTime.AddSeconds(5)) { $alive = $false }
+            } catch { }   # start time not readable: keep the file
+        } catch { }
+        if ($alive) { continue }
+        try {
+            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+            $removed++
+        } catch { }
+    }
+    return $removed
+}
 function Invoke-Archiver {
     # Runs 7-Zip, shows progress with speed and remaining time, returns the
     # exit code and the parsed issues.
@@ -200,6 +234,11 @@ function Invoke-Archiver {
 
     if (-not (Test-Path -LiteralPath $ArchiverPath -PathType Leaf)) {
         throw (T 'error.archiver_missing' $ArchiverPath)
+    }
+
+    if (-not $script:StaleFilesChecked) {
+        $script:StaleFilesChecked = $true
+        [void](Remove-StaleArchiverFile)
     }
 
     $pollMs = [int](Get-MigratorConfig).ProgressPollMs
@@ -492,6 +531,7 @@ Export-ModuleMember -Function @(
     'Get-ArchiverProgress'
     'Get-ArchiverIssues'
     'Get-ArchiveOutcome'
+    'Remove-StaleArchiverFile'
     'Invoke-Archiver'
     'New-ProfileArchive'
     'Test-ProfileArchive'

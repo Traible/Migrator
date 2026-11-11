@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Temporary files of an interrupted run are cleaned up.** When the window is closed during a backup or restore, Migrator cannot remove its list files and 7-Zip output from the temp folder. The next run now deletes such files when the process that created them no longer exists; files of another Migrator that is still running are left alone.
+
 ## 2.2.2 — 2026-11-11
 
 ### Fixed

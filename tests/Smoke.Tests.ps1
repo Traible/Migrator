@@ -150,6 +150,23 @@ $line = Format-ProgressLine -Activity 'Backup' -Percent 50 -BytesPerSecond (100M
     -FilesDone 12400 -TotalFiles 40000 -Current 'AppData\Roaming\App' -BarWidth 10
 Assert-True ($line -match ' 50%' -and $line -match '/s' -and $line -match 'about 4 min left' -and $line -match 'files' -and $line -match 'Roaming') "Progress line has percent, current speed, files, remaining time and folder: $line"
 Assert-True ((Format-ProgressLine -Activity 'x' -Percent 1 -Estimating) -match 'estimating') 'Progress line says "estimating" instead of a made-up time'
+$staleDir = Join-Path $env:LOCALAPPDATA 'MigratorSmokeTest-stale'
+Remove-Item -LiteralPath $staleDir -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $staleDir | Out-Null
+try {
+    $deadId = 4000000
+    while (Get-Process -Id $deadId -ErrorAction SilentlyContinue) { $deadId++ }
+    $guid = [guid]::NewGuid().ToString('N')
+    $staleNames = @("migrator-7z-$deadId-$guid.out", "migrator-7z-$deadId-$guid.err", "migrator-list-$deadId-$guid.lst", "migrator-ls-$deadId-$guid.txt.err")
+    $keptNames = @("migrator-list-$PID-$guid.lst", "migrator-notes.txt", "migrator-pwsh-$guid.zip")
+    foreach ($name in ($staleNames + $keptNames)) { Set-Content -LiteralPath (Join-Path $staleDir $name) -Value 'x' }
+    $removedCount = Remove-StaleArchiverFile -Path $staleDir
+    $remaining = @(Get-ChildItem -LiteralPath $staleDir -File | ForEach-Object Name | Sort-Object)
+    Assert-True ($removedCount -eq 4) "Files of a run that no longer exists are removed ($removedCount of 4)"
+    Assert-True (($remaining -join '|') -eq (($keptNames | Sort-Object) -join '|')) 'Files of a running Migrator and unrelated files are kept'
+} finally {
+    Remove-Item -LiteralPath $staleDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 Assert-True ((Format-RemainingTime -Seconds 20) -match 'less than a minute') 'Remaining time: under a minute'
 Assert-True ((Format-RemainingTime -Seconds 7300) -eq 'about 2 h 0 min left') 'Remaining time: hours are rounded to 5 minutes'
 
@@ -274,6 +291,7 @@ if ($SkipIntegration -or -not $archiver) {
         Assert-True ($scan.Files -eq 8) "Scan: counts only files that will be archived ($($scan.Files))"
 
         # --- backup with a locked file -----------------------------------
+        $tempBefore = @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'migrator-*' -File -ErrorAction SilentlyContinue | ForEach-Object Name)
         $lockedStream = [IO.File]::Open((Join-Path $source 'Documents\locked.bin'), 'Open', 'ReadWrite', 'None')
         try {
             $backup = Invoke-Script $backupScript @('-SourcePath', $source, '-Destination', $backups, '-Mode', 'Full', '-NonInteractive', '-ComputeHash')
@@ -289,7 +307,11 @@ if ($SkipIntegration -or -not $archiver) {
         Assert-True ($null -ne $archive) 'Archive (.7z) was created'
         Assert-True ($null -ne $manifestFile) 'Manifest was created'
         Assert-True ($null -ne (Get-ChildItem -LiteralPath $backups -Filter '*.summary.txt' -File | Select-Object -First 1)) 'Summary was created'
-        Assert-True (@(Get-ChildItem -LiteralPath $env:TEMP -Filter "migrator-list-*" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-2) }).Count -eq 0) 'Temporary list files are removed'
+        # Only files that appeared during this backup count: another Migrator
+        # running on the same PC keeps its own files in the same folder.
+        $leftover = @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'migrator-*' -File -ErrorAction SilentlyContinue |
+            Where-Object { $tempBefore -notcontains $_.Name -and $_.Name -match '^migrator-(7z|list|ls)-(\d+)-' -and -not (Get-Process -Id ([int]$Matches[2]) -ErrorAction SilentlyContinue) })
+        Assert-True ($leftover.Count -eq 0) 'Temporary files are removed after a backup'
 
         if ($manifestFile) {
             $manifest = Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json -AsHashtable
