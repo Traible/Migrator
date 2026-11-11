@@ -11,7 +11,7 @@ Migrator — небольшой инструмент на PowerShell для пе
 восстанавливает их в ту же, другую или новую учётную запись.
 
 ```text
-  Migrator  v2.2.2
+  Migrator  v2.2.3
   ====================================================================
   Резервная копия и восстановление профиля пользователя Windows
 
@@ -220,7 +220,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 115 проверок, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 124 проверки, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 

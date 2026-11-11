@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.2.2') 'Tool version is 2.2.2'
+Assert-True ([string]$config.ToolVersion -eq '2.2.3') 'Tool version is 2.2.3'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -150,8 +150,7 @@ $line = Format-ProgressLine -Activity 'Backup' -Percent 50 -BytesPerSecond (100M
     -FilesDone 12400 -TotalFiles 40000 -Current 'AppData\Roaming\App' -BarWidth 10
 Assert-True ($line -match ' 50%' -and $line -match '/s' -and $line -match 'about 4 min left' -and $line -match 'files' -and $line -match 'Roaming') "Progress line has percent, current speed, files, remaining time and folder: $line"
 Assert-True ((Format-ProgressLine -Activity 'x' -Percent 1 -Estimating) -match 'estimating') 'Progress line says "estimating" instead of a made-up time'
-$staleDir = Join-Path $env:LOCALAPPDATA 'MigratorSmokeTest-stale'
-Remove-Item -LiteralPath $staleDir -Recurse -Force -ErrorAction SilentlyContinue
+$staleDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $staleDir | Out-Null
 try {
     $deadId = 4000000
@@ -254,13 +253,15 @@ if ($SkipIntegration -or -not $archiver) {
 
     # Under %LOCALAPPDATA% on purpose: the path above the profile contains
     # "AppData", which must not influence the exclusions.
-    $base = Join-Path $env:LOCALAPPDATA 'MigratorSmokeTest'
+    # A new folder with a unique name every run: the tests never delete a
+    # folder they did not create.
+    $base = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
     $source = Join-Path $base 'Source Юзер'
     $backups = Join-Path $base 'Backups'
     $target = Join-Path $base 'Target User'
+    $junctions = [System.Collections.Generic.List[string]]::new()
 
     try {
-        Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
         $files = [ordered]@{
             'Desktop\hello world.txt' = 'hello desktop'
             'Desktop\æøå.txt' = 'unicode name'
@@ -403,6 +404,45 @@ if ($SkipIntegration -or -not $archiver) {
             Assert-True ($lockedRestore.ExitCode -eq 0 -and [bool]($lockedRestore.Output -match 'COMPLETED WITH WARNINGS')) 'Restore over a locked file completes with warnings'
             Assert-True (Test-Path -LiteralPath (Join-Path $lockedTarget 'Desktop\hello world.txt')) 'Other files are restored when one target file is locked'
 
+            # A folder in the target that is a junction leading outside it is
+            # skipped: nothing may be written through it.
+            $linkTarget = Join-Path $base 'Link Target'
+            $outside = Join-Path $base 'Outside'
+            New-Item -ItemType Directory -Force -Path $linkTarget, $outside, (Join-Path $linkTarget 'AppData\Roaming') | Out-Null
+            cmd.exe /c mklink /J (Join-Path $linkTarget 'Documents') $outside | Out-Null
+            cmd.exe /c mklink /J (Join-Path $linkTarget 'Application Data') (Join-Path $linkTarget 'AppData\Roaming') | Out-Null
+            $junctions.Add((Join-Path $linkTarget 'Documents')); $junctions.Add((Join-Path $linkTarget 'Application Data'))
+            Assert-True (((Get-OutsideLinks -Root $linkTarget) -join '|') -eq 'Documents') 'Only a link that leaves the target is reported, not one that stays inside'
+            $linkRestore = Invoke-Script $restoreScript @('-Method', 'Archive', '-Archive', $archive.FullName, '-TargetPath', $linkTarget, '-NonInteractive')
+            Assert-True ($linkRestore.ExitCode -eq 0 -and [bool]($linkRestore.Output -match 'links leading outside')) 'Restore over a junction completes and names the skipped folder'
+            Assert-True (@(Get-ChildItem -LiteralPath $outside -Force).Count -eq 0) 'Nothing is written through a junction that leads outside the target'
+            Assert-True (Test-Path -LiteralPath (Join-Path $linkTarget 'Desktop\hello world.txt')) 'The rest of the profile is restored next to the junction'
+
+            # The target folder itself is a junction: refused without -Force.
+            $realTarget = Join-Path $base 'Real Target'
+            $linkedRoot = Join-Path $base 'Linked Root'
+            New-Item -ItemType Directory -Force -Path $realTarget | Out-Null
+            cmd.exe /c mklink /J $linkedRoot $realTarget | Out-Null
+            $junctions.Add($linkedRoot)
+            Assert-True ((Resolve-RealPath -Path (Join-Path $linkedRoot 'a\b')) -eq (Join-Path $realTarget 'a\b')) 'A path through a junction resolves to the real location'
+            $rootLink = Invoke-Script $restoreScript @('-Method', 'Archive', '-Archive', $archive.FullName, '-TargetPath', $linkedRoot, '-NonInteractive')
+            Assert-True ($rootLink.ExitCode -ne 0 -and [bool]($rootLink.Output -match 'is a link to') -and @(Get-ChildItem -LiteralPath $realTarget -Force).Count -eq 0) 'A target that is a junction is refused without -Force'
+            $rootForced = Invoke-Script $restoreScript @('-Method', 'Archive', '-Archive', $archive.FullName, '-TargetPath', $linkedRoot, '-NonInteractive', '-Force')
+            Assert-True ($rootForced.ExitCode -eq 0 -and (Test-Path -LiteralPath (Join-Path $realTarget 'Documents\report.txt'))) 'With -Force the restore goes to the real location'
+
+            # A backup that ended with an error is not restored by default.
+            $failedDir = Join-Path $base 'Failed Backup'
+            New-Item -ItemType Directory -Force -Path $failedDir | Out-Null
+            $failedArchive = Join-Path $failedDir $archive.Name
+            Copy-Item -LiteralPath $archive.FullName -Destination $failedArchive
+            $failedManifest = Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json -AsHashtable
+            $failedManifest['result'] = 'FAILED'
+            $failedManifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Get-ManifestPath -ArchivePath $failedArchive) -Encoding utf8
+            Assert-True ((Get-ArchiveMetadata -ArchivePath $failedArchive).Failed -and -not (Get-ArchiveMetadata -ArchivePath $archive.FullName).Failed) 'A failed backup is recognised by its manifest'
+            $failedTarget = Join-Path $base 'Failed Target'
+            $failedRestore = Invoke-Script $restoreScript @('-Method', 'Archive', '-Archive', $failedArchive, '-TargetPath', $failedTarget, '-NonInteractive')
+            Assert-True ($failedRestore.ExitCode -ne 0 -and [bool]($failedRestore.Output -match 'ended with an error') -and -not (Test-Path -LiteralPath $failedTarget)) 'A failed backup is not restored without -Force'
+
             # A damaged archive must fail during extraction even without -Verify.
             $damaged = Join-Path $base 'damaged.7z'
             $bytes = [IO.File]::ReadAllBytes($archive.FullName)
@@ -451,6 +491,10 @@ if ($SkipIntegration -or -not $archiver) {
         Write-Host "  FAIL  Integration test threw: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray
     } finally {
+        # Junctions first, as links: their targets must not be emptied.
+        foreach ($junction in $junctions) {
+            if (Test-Path -LiteralPath $junction) { cmd.exe /c rmdir $junction | Out-Null }
+        }
         Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

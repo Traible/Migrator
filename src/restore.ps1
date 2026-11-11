@@ -47,7 +47,19 @@ Write-RestoreLog "Restore session started. user=$env:USERNAME computer=$env:COMP
 function Get-UsersRoot { return (Join-Path $env:SystemDrive 'Users') }
 
 function Assert-SafeTargetPath {
+    # -Path is checked as written and, when a part of it is a junction or a
+    # symbolic link, once more as the place it really leads to.
     param([Parameter(Mandatory)][string]$Path)
+
+    Assert-SafeTargetText -Path $Path
+    $real = Resolve-RealPath -Path $Path
+    if (-not $real.Equals([IO.Path]::GetFullPath($Path).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+        Assert-SafeTargetText -Path $real -Redirected
+    }
+}
+
+function Assert-SafeTargetText {
+    param([Parameter(Mandatory)][string]$Path, [switch]$Redirected)
 
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
     $root = [IO.Path]::GetPathRoot($full)
@@ -62,7 +74,9 @@ function Assert-SafeTargetPath {
     if ($full.Equals($usersRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw (T 'r.error.target_users_root' $usersRoot)
     }
-    if (-not (Test-PathWithin -Child $full -Parent $usersRoot) -and -not (Get-ProfileByPath $full)) {
+    # A profile moved to another disk through a link is a real setup, so the
+    # "inside the users folder" rule applies to the path as written only.
+    if (-not $Redirected -and -not (Test-PathWithin -Child $full -Parent $usersRoot) -and -not (Get-ProfileByPath $full)) {
         throw (T 'r.error.target_not_profile' $usersRoot $full)
     }
 
@@ -141,6 +155,8 @@ function Select-ArchiveMetadata {
         $archives = @(Get-ArchiveList -BackupRoot $folder)
 
         if ($NonInteractive) {
+            # A backup that ended with an error is never picked on its own.
+            $archives = @($archives | Where-Object { -not $_.Failed })
             if ($archives.Count -eq 1) { return $archives[0] }
             if ($archives.Count -eq 0) { throw (T 'r.error.no_archives' $folder) }
             throw (T 'r.error.many_archives' $folder)
@@ -150,7 +166,8 @@ function Select-ArchiveMetadata {
         foreach ($item in $archives) {
             $user = if ($item.SourceUser) { $item.SourceUser } else { T 'unit.unknown' }
             $mode = if ($item.Mode) { $item.Mode } else { '?' }
-            $items.Add((New-MenuItem -Value $item -Label $item.ArchiveName -Hint (T 'r.archive.hint' `
+            $label = if ($item.Failed) { '{0}  {1}' -f $item.ArchiveName, (T 'r.archive.failed_mark') } else { $item.ArchiveName }
+            $items.Add((New-MenuItem -Value $item -Label $label -Hint (T 'r.archive.hint' `
                 $item.ArchiveTime.ToString('yyyy-MM-dd HH:mm') $user $mode (Format-Size $item.ArchiveBytes))))
         }
         $items.Add((New-MenuItem -Value 'other' -Label (T 'r.archive.other') -Key 'O'))
@@ -402,11 +419,43 @@ function Select-RestoreTarget {
     }
 }
 
+function Get-TargetOutsideLinks {
+    # Folders in the target that are links leading outside it. They are
+    # skipped: restoring through one would write files to another place.
+    param([Parameter(Mandatory)]$Target)
+
+    $links = @(Get-OutsideLinks -Root $Target.LocalPath)
+    if ($links.Count -gt 0) {
+        Write-RestoreLog "Target folders that are links leading outside (skipped): $($links -join '; ')"
+        Write-Host ''
+        Write-Warn (T 'r.warn.inner_links' $links.Count)
+        foreach ($link in ($links | Select-Object -First 10)) { Write-Hint "  $link" }
+        if ($links.Count -gt 10) { Write-Hint ('  ' + (T 'r.more_in_log' ($links.Count - 10))) }
+    }
+    return $links
+}
+
 function Test-TargetReady {
     # Shared checks for both restore methods. Returns $false to cancel.
     param([Parameter(Mandatory)]$Target)
 
     Assert-SafeTargetPath -Path $Target.LocalPath
+
+    $realPath = Resolve-RealPath -Path $Target.LocalPath
+    if (-not $realPath.Equals([IO.Path]::GetFullPath($Target.LocalPath).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+        Write-RestoreLog "Target is a link: $($Target.LocalPath) -> $realPath"
+        if ($NonInteractive -and -not $Force) { throw (T 'r.error.target_link' $Target.LocalPath $realPath) }
+        Write-Host ''
+        Write-Warn (T 'r.warn.target_link' $Target.LocalPath $realPath)
+        Write-Hint (T 'r.hint.target_link')
+        if (-not $Force -and -not (Confirm-Continue (T 'r.ask.target_link_continue') $false)) {
+            Write-Warn (T 'r.cancelled')
+            return $false
+        }
+        # From here on the real location is used: recent 7-Zip versions
+        # refuse to extract through a link in the output path.
+        $Target.LocalPath = $realPath
+    }
 
     if ($Target.IsCurrent) {
         Write-Host ''
@@ -450,6 +499,15 @@ function Invoke-ArchiveRestoreFlow {
         if (-not (Confirm-Continue (T 'r.ask.continue_archive') $true)) { return }
     }
 
+    if ($metadata.Failed) {
+        Write-RestoreLog "Archive is marked as a failed backup: $($metadata.ArchivePath)"
+        if ($NonInteractive -and -not $Force) { throw (T 'r.error.failed_backup' $metadata.ArchiveName) }
+        Write-Host ''
+        Write-Warn (T 'r.warn.failed_backup')
+        Write-Hint (T 'r.hint.failed_backup')
+        if (-not $Force -and -not (Confirm-Continue (T 'r.ask.failed_continue') $false)) { return }
+    }
+
     $sourceUser = $metadata.SourceUser
     $target = Select-RestoreTarget -ArchiveSourceUser $sourceUser
     if (-not $target) { return }
@@ -467,6 +525,8 @@ function Invoke-ArchiveRestoreFlow {
     $excludeMasks = @(Get-RestoreExcludeMasks)
     $excludePaths = @(Select-ExcludedArchiveFolders -Directories $content.Directories -ExcludeMasks $excludeMasks)
     $nameMasks = @((Split-ExcludeMasks -Masks $excludeMasks).FileNameMasks)
+    $outsideLinks = @(Get-TargetOutsideLinks -Target $target)
+    if ($outsideLinks.Count -gt 0) { $excludePaths = @($excludePaths + $outsideLinks | Sort-Object -Unique) }
 
     $freeBytes = Get-FreeSpaceBytes -Path $target.LocalPath
     $lowSpace = ($null -ne $freeBytes -and $content.Bytes -gt 0 -and $freeBytes -lt $content.Bytes)
@@ -705,6 +765,10 @@ function Invoke-WindowsOldRestoreFlow {
     $scan = Measure-ProfileTree -Path $source.FullName -ExcludeMasks $masks
     $excludeDirectories = @(Get-RobocopyExcludeDirectories -SourceRoot $source.FullName -Scan $scan)
     $excludeFiles = @((Split-ExcludeMasks -Masks $masks).FileNameMasks)
+    $outsideLinks = @(Get-TargetOutsideLinks -Target $target)
+    if ($outsideLinks.Count -gt 0) {
+        $excludeDirectories = @($excludeDirectories + ($outsideLinks | ForEach-Object { Join-Path $source.FullName $_ }) | Sort-Object -Unique)
+    }
 
     $freeBytes = Get-FreeSpaceBytes -Path $target.LocalPath
     $lowSpace = ($null -ne $freeBytes -and $scan.Bytes -gt 0 -and $freeBytes -lt $scan.Bytes)

@@ -26,7 +26,7 @@ param(
     [switch]$Portable,
     [switch]$CheckOnly,
     [switch]$Yes,
-    [string]$PowerShellVersion = '7.6.9'
+    [string]$PowerShellVersion = '7.6.10'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -96,7 +96,14 @@ function Copy-PortableSevenZip([string]$InstalledExe) {
 }
 
 function Install-PortablePwsh {
-    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+    # The architecture of Windows itself: a 32-bit process on 64-bit Windows
+    # reports x86 in PROCESSOR_ARCHITECTURE and the real one in ...W6432.
+    $machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    $arch = switch ($machine) {
+        'ARM64' { 'arm64' }
+        'x86'   { 'x86' }
+        default { 'x64' }
+    }
     $zipName = "PowerShell-$PowerShellVersion-win-$arch.zip"
     $base = "https://github.com/PowerShell/PowerShell/releases/download/v$PowerShellVersion"
     $temp = Join-Path $env:TEMP ("migrator-pwsh-" + [guid]::NewGuid().ToString('N'))

@@ -1,10 +1,26 @@
 # Changelog
 
-## Unreleased
+## 2.2.3 — 2026-11-11
+
+### Security
+
+- **Restore no longer writes through links that leave the target profile.** The target path used to be checked as text only, while a folder inside a profile can be a junction to any other place on the disk. Now:
+  - the target is also checked as the location it really leads to (never the Windows folder, a drive root or the users folder itself); when the target or one of its parent folders is a junction or a symbolic link, Migrator shows where it leads and asks first, and a non-interactive run stops unless `-Force` is given;
+  - folders inside the target that are links leading outside it are skipped and listed, for both the archive and the `Windows.old` restore. Links that stay inside the profile (the legacy `Application Data` kind) are not affected.
 
 ### Fixed
 
+- **A backup that ended with an error is no longer offered as an ordinary one.** Its archive stays on disk, but the restore list marks it `[FAILED BACKUP]`, asks before using it, never picks it automatically, and a non-interactive run needs `-Force`.
 - **Temporary files of an interrupted run are cleaned up.** When the window is closed during a backup or restore, Migrator cannot remove its list files and 7-Zip output from the temp folder. The next run now deletes such files when the process that created them no longer exists; files of another Migrator that is still running are left alone.
+
+### Changed
+
+- `Get-Tools.ps1` downloads PowerShell **7.6.10** (was 7.6.9) and picks the 32-bit package on 32-bit Windows instead of the 64-bit one.
+
+### Tests
+
+- The tests create their folders under unique names and delete only what they created; a folder that merely has the same name as an old test folder is never touched.
+- New checks: restore over a junction that leaves the target, a target that is itself a junction (with and without `-Force`), a failed backup, cleanup of leftover temporary files.
 
 ## 2.2.2 — 2026-11-11
 

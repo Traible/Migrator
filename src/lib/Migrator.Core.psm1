@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.2.2'
+        ToolVersion         = '2.2.3'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
@@ -383,6 +383,79 @@ function Test-PathWithin {
     $parentFull = [IO.Path]::GetFullPath($Parent).TrimEnd('\')
     if ($childFull.Equals($parentFull, [StringComparison]::OrdinalIgnoreCase)) { return $true }
     return $childFull.StartsWith($parentFull + '\', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Resolve-RealPath {
+    # The location a path really leads to: every existing part of it that is
+    # a junction or a directory symbolic link is replaced by its target.
+    # Parts that do not exist yet are kept as written. A path check on the
+    # text alone is not enough before files are written in bulk: a folder
+    # inside a profile can be a junction to any other place on the disk.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $root = [IO.Path]::GetPathRoot($full)
+    if (-not $root) { return $full }
+    $current = $root.TrimEnd('\')
+    $rest = $full.Substring([Math]::Min($full.Length, $root.Length)).Trim('\')
+    if (-not $rest) { return $full }
+
+    $hops = 0
+    foreach ($part in $rest.Split('\')) {
+        $current = $current + '\' + $part
+        try {
+            $info = [IO.DirectoryInfo]::new($current)
+            if ($info.Exists -and $null -ne $info.LinkTarget) {
+                $final = $info.ResolveLinkTarget($true)
+                if ($final -and (++$hops) -le 32) { $current = $final.FullName.TrimEnd('\') }
+            }
+        } catch { }   # unreadable part: keep it as written
+    }
+    return $current
+}
+
+function Get-OutsideLinks {
+    # Folders under -Root that are junctions or directory symbolic links
+    # leading outside it, as paths relative to -Root. Restoring "through"
+    # such a folder would write files somewhere else on the disk. Links that
+    # stay inside the root (the legacy "Application Data" kind) are harmless
+    # and are not reported. Links are never followed.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Root)
+
+    $found = [System.Collections.Generic.List[string]]::new()
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    if (-not (Test-Path -LiteralPath $rootFull -PathType Container)) { return @() }
+    $rootReal = Resolve-RealPath -Path $rootFull
+
+    $options = [IO.EnumerationOptions]::new()
+    $options.IgnoreInaccessible = $true
+    $options.AttributesToSkip = [IO.FileAttributes]::None
+    $options.RecurseSubdirectories = $false
+
+    $stack = [System.Collections.Generic.Stack[string]]::new()
+    $stack.Push($rootFull)
+    while ($stack.Count -gt 0) {
+        $directory = $stack.Pop()
+        try {
+            foreach ($entry in [IO.DirectoryInfo]::new($directory).EnumerateDirectories('*', $options)) {
+                if ($null -eq $entry.LinkTarget) {
+                    $stack.Push($entry.FullName)
+                    continue
+                }
+                $real = $null
+                try {
+                    $final = $entry.ResolveLinkTarget($true)
+                    if ($final) { $real = $final.FullName.TrimEnd('\') }
+                } catch { }
+                # A link that cannot be resolved is treated as leading outside.
+                $inside = $real -and ((Test-PathWithin -Child $real -Parent $rootFull) -or (Test-PathWithin -Child $real -Parent $rootReal))
+                if (-not $inside) { $found.Add($entry.FullName.Substring($rootFull.Length).TrimStart('\')) }
+            }
+        } catch { }
+    }
+    return @($found | Sort-Object)
 }
 
 # ---------------------------------------------------------------------------
@@ -780,6 +853,9 @@ function Get-ArchiveMetadata {
         SourceBytes   = $sourceBytes
         SourceFiles   = $sourceFiles
         HasManifest   = [bool]$manifest
+        # A backup that ended with an error still leaves its archive behind;
+        # the manifest is the only place that says so.
+        Failed        = [bool]($manifest -and ([string]$manifest['result']) -eq 'FAILED')
         Manifest      = $manifest
         ManifestPath  = $manifestPath
     }
@@ -861,6 +937,8 @@ Export-ModuleMember -Alias 'T' -Function @(
     'Get-TargetVolumes'
     'Get-FreeSpaceBytes'
     'Test-PathWithin'
+    'Resolve-RealPath'
+    'Get-OutsideLinks'
     'Get-ModeExcludeMasks'
     'Get-RestoreExcludeMasks'
     'ConvertTo-MaskRegex'
