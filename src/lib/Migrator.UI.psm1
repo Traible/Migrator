@@ -589,16 +589,50 @@ function Write-ProgressText {
     $width = 0
     try { $width = [Console]::WindowWidth - 1 } catch { }
     if ($width -gt 10 -and $Line.Length -gt $width) { $Line = $Line.Substring(0, $width) }
-    $pad = [Math]::Max(0, $State.LastLength - $Line.Length)
-    Write-Host ("`r" + $Line + (' ' * $pad)) -NoNewline -ForegroundColor $script:Theme.Accent
-    $State.LastLength = $Line.Length
+
+    if (Test-VirtualTerminal) {
+        Write-Host ((Get-ProgressRewind -Length $State.LastLength -WindowWidth ($width + 1)) + $Line) `
+            -NoNewline -ForegroundColor $script:Theme.Accent
+        $State.LastLength = $Line.Length
+    } else {
+        # No escape sequences: overwrite the previous text with spaces.
+        $pad = [Math]::Max(0, $State.LastLength - $Line.Length)
+        Write-Host ("`r" + $Line + (' ' * $pad)) -NoNewline -ForegroundColor $script:Theme.Accent
+        $State.LastLength = $Line.Length + $pad
+    }
+}
+
+function Test-VirtualTerminal {
+    try { return [bool]$Host.UI.SupportsVirtualTerminal } catch { return $false }
+}
+
+function Get-ProgressRewind {
+    # Escape sequence that returns to the start of the progress line and
+    # erases it. When the window was made narrower, the terminal re-wraps the
+    # line that is already on screen over several rows and the cursor ends up
+    # on the last of them; a bare carriage return would leave the upper rows
+    # behind as garbage.
+    param([int]$Length, [int]$WindowWidth)
+    $esc = [char]27
+    $rowsAbove = 0
+    if ($Length -gt 0 -and $WindowWidth -gt 0) {
+        $rowsAbove = [int][Math]::Ceiling($Length / $WindowWidth) - 1
+    }
+    $up = if ($rowsAbove -gt 0) { "$esc[${rowsAbove}A" } else { '' }
+    return "`r" + $up + "$esc[J"
 }
 
 function Complete-ProgressState {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$State)
     if ($State.Interactive -and $State.LastLength -gt 0) {
-        Write-Host ("`r" + (' ' * $State.LastLength) + "`r") -NoNewline
+        if (Test-VirtualTerminal) {
+            $width = 0
+            try { $width = [Console]::WindowWidth } catch { }
+            Write-Host (Get-ProgressRewind -Length $State.LastLength -WindowWidth $width) -NoNewline
+        } else {
+            Write-Host ("`r" + (' ' * $State.LastLength) + "`r") -NoNewline
+        }
         $State.LastLength = 0
     }
 }
@@ -627,5 +661,6 @@ Export-ModuleMember -Function @(
     'New-ProgressState'
     'Format-ProgressLine'
     'Update-ProgressState'
+    'Get-ProgressRewind'
     'Complete-ProgressState'
 )

@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.2.1') 'Tool version is 2.2.1'
+Assert-True ([string]$config.ToolVersion -eq '2.2.2') 'Tool version is 2.2.2'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -150,6 +150,9 @@ $line = Format-ProgressLine -Activity 'Backup' -Percent 50 -BytesPerSecond (100M
     -FilesDone 12400 -TotalFiles 40000 -Current 'AppData\Roaming\App' -BarWidth 10
 Assert-True ($line -match ' 50%' -and $line -match '/s' -and $line -match 'about 4 min left' -and $line -match 'files' -and $line -match 'Roaming') "Progress line has percent, current speed, files, remaining time and folder: $line"
 Assert-True ((Format-ProgressLine -Activity 'x' -Percent 1 -Estimating) -match 'estimating') 'Progress line says "estimating" instead of a made-up time'
+$esc = [char]27
+Assert-True ((Get-ProgressRewind -Length 100 -WindowWidth 120) -eq "`r$esc[J") 'Progress redraw: a line that fits is erased in place'
+Assert-True ((Get-ProgressRewind -Length 100 -WindowWidth 40) -eq "`r$esc[2A$esc[J") 'Progress redraw: a line re-wrapped by a narrower window is erased from its first row'
 Assert-True ((Format-RemainingTime -Seconds 20) -match 'less than a minute') 'Remaining time: under a minute'
 Assert-True ((Format-RemainingTime -Seconds 7300) -eq 'about 2 h 0 min left') 'Remaining time: hours are rounded to 5 minutes'
 
