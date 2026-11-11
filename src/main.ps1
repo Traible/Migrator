@@ -15,7 +15,7 @@ if ($Language) { $env:MIGRATOR_LANG = $Language }
 $toolRoot = Split-Path -Parent $PSScriptRoot
 
 function Import-MigratorModules {
-    foreach ($module in 'Core', 'UI', 'Archive', 'Browsers') {
+    foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
         Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force -Global
     }
 }
@@ -42,8 +42,27 @@ function Show-ToolStatus {
     if (-not $archiver) {
         Write-Warn (T 'm.tools.how_to_get')
         Write-Hint (T 'm.tools.get_tools')
-    } else {
-        Write-Ok (T 'm.tools.ready')
+        Wait-Enter
+        return
+    }
+    Write-Ok (T 'm.tools.ready')
+
+    # Is this folder self-contained (usable on a PC without any tools)?
+    $kit = Test-RestoreKit -Path $toolRoot
+    Write-Host ''
+    if ($kit.State -eq 'Ready') {
+        Write-Ok (T 'm.tools.portable_yes')
+        Wait-Enter
+        return
+    }
+    Write-Warn (T 'm.tools.portable_no')
+    Write-Hint (T 'm.tools.portable_hint')
+    if (Test-InteractiveConsole) {
+        if (Read-YesNo (T 'm.tools.ask_portable') $false) {
+            Write-Hint (T 'b.kit.building' $toolRoot)
+            $result = New-RestoreKit -Path $toolRoot -ToolSource Copy
+            if ($result.Ok) { Write-Ok (T 'm.tools.portable_yes') } else { Write-Warn (T 'b.kit.failed' ($result.Problems -join '; ')) }
+        }
     }
     Wait-Enter
 }

@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.1.0
+  Migrator  v2.2.0
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -94,6 +94,33 @@ and `Dropbox` folders with their size and the number of cloud-only files and
 asks whether to exclude each one. Unattended runs exclude folders that contain
 cloud-only files; `-CloudFolders Exclude|Include|Auto` overrides this.
 
+## Restore kit: for a new PC without internet
+
+A freshly installed PC often has no PowerShell 7, no 7-Zip and no network
+driver yet. When you make a backup, Migrator offers to put a **restore kit**
+next to the archive: a copy of Migrator with both programs inside.
+
+```text
+E:\MigratorBackups\PC-alex-2026-11-11_10-00-00.7z
+E:\MigratorBackups\Migrator\Migrator.bat        <- run this on the new PC
+E:\MigratorBackups\Migrator\Tools\pwsh, Tools\7-Zip
+```
+
+- **Copy the installed programs** (default) - about 250 MB, no internet
+  needed, the same versions the backup has just worked with.
+- **Download PowerShell** from the official release instead - hash and
+  Microsoft signature are checked.
+- The question is asked once per backup folder: an existing kit is reused,
+  and its scripts are refreshed when Migrator has been updated.
+- Unattended runs: `-RestoreKit Copy|Download|None` (default `None`).
+
+If the archives are saved inside the Migrator folder itself, that folder
+becomes the kit: only its `Tools\` folder is filled. The same can be done
+from the menu: *Check required tools*.
+
+If you start `Migrator.bat` on a PC that has no PowerShell 7 and no kit, it
+offers to install PowerShell 7 and 7-Zip (this needs internet).
+
 ## Restore
 
 - **From an archive** - `.7z` made by Migrator, or `.rar` made by version 2.0.
@@ -122,7 +149,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 
 | Script | Switches |
 |---|---|
-| `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
+| `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-RestoreKit None\|Copy\|Download`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
 | `restore.ps1` | `-Method Archive\|WindowsOld`, `-Archive`, `-SourceUser`, `-TargetUser`, `-TargetPath`, `-CreateUser`, `-Verify`, `-NoVerify`, `-Force`, `-NonInteractive` |
 | `main.ps1` | `-Language en\|ru\|auto` |
 
@@ -187,7 +214,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 93 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 104 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 
@@ -205,6 +232,6 @@ the values; the tests check that every key is present.
 
 ## License
 
-MIT - see [LICENSE](LICENSE). Third-party programs and their licenses are
+MIT, © 2026 Artem Osadchyi - see [LICENSE](LICENSE). Third-party programs and their licenses are
 listed in [THIRD-PARTY.md](THIRD-PARTY.md). Version history:
 [CHANGELOG.md](CHANGELOG.md).

@@ -11,6 +11,9 @@ param(
     [switch]$ComputeHash,
     [ValidateSet('Auto','Exclude','Include')]
     [string]$CloudFolders,
+    # Put Migrator with portable PowerShell and 7-Zip next to the archive.
+    [ValidateSet('None','Copy','Download')]
+    [string]$RestoreKit,
     [switch]$Force
 )
 
@@ -18,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $toolRoot = Split-Path -Parent $PSScriptRoot
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 
@@ -214,6 +217,22 @@ if ($excludedCloudFolders.Count -gt 0) { $plan[(T 'f.cloud_excluded')] = ($exclu
 $plan[(T 'f.archive')]     = $artifacts.Archive
 $plan[(T 'f.free_space')]  = if ($lowSpace) { @((Format-Size $freeBytes), 'Warn') } else { Format-Size $freeBytes }
 $plan[(T 'f.compression')] = if ($compression -eq 0) { T 'b.plan.store' } else { T 'b.plan.level' $compression }
+
+# Restore kit: Migrator + portable tools next to the archive, for a new PC
+# that has neither PowerShell 7, nor 7-Zip, nor internet yet.
+$kit = Test-RestoreKit -Path (Get-RestoreKitPath -Destination $Destination)
+$kitAction = if ($RestoreKit) { $RestoreKit } else { 'None' }
+if ($kit.State -eq 'Ready') {
+    $kitAction = 'None'
+    $plan[(T 'f.kit')] = T 'b.kit.ready' $kit.Path
+} elseif ($kit.State -eq 'Outdated' -and $kitAction -eq 'None') {
+    $kitAction = 'Copy'      # tools are there; only the scripts are refreshed
+    $plan[(T 'f.kit')] = T 'b.kit.will_update' $kit.Path
+} elseif ($kitAction -ne 'None') {
+    $plan[(T 'f.kit')] = T 'b.kit.will_create' $kit.Path
+}
+$askKit = $interactive -and -not $RestoreKit -and $kit.State -in @('Missing', 'NoTools')
+
 Write-SummaryBox -Title (T 'b.plan.title') -Fields $plan
 
 if ($lowSpace) { Write-Warn (T 'b.warn.low_space') }
@@ -233,6 +252,17 @@ if ($interactive) {
         return
     }
     $verifyAfterBackup = ($action -eq 'verify')
+
+    if ($askKit) {
+        Write-Host ''
+        Write-Hint (T 'b.kit.explain1')
+        Write-Hint (T 'b.kit.explain2' $kit.Path)
+        $kitAction = Show-Menu -Title (T 'b.kit.title') -Items @(
+            (New-MenuItem -Value 'Copy' -Label (T 'b.kit.copy') -Hint (T 'b.kit.copy.hint'))
+            (New-MenuItem -Value 'Download' -Label (T 'b.kit.download') -Hint (T 'b.kit.download.hint'))
+            (New-MenuItem -Value 'None' -Label (T 'b.kit.skip') -Hint (T 'b.kit.skip.hint'))
+        )
+    }
 } elseif ($lowSpace -and -not $Force) {
     throw (T 'b.error.low_space')
 }
@@ -278,8 +308,20 @@ $resultCode = if (-not $finalOk) { 'FAILED' } elseif ($hasWarnings) { 'COMPLETED
 $resultText = if (-not $finalOk) { T 'result.failed' } elseif ($hasWarnings) { T 'result.warnings' } else { T 'result.success' }
 $resultColor = if (-not $finalOk) { 'Error' } elseif ($hasWarnings) { 'Warn' } else { 'Ok' }
 
+# The kit is an extra: a problem with it never turns a good backup into a failure.
+$kitResult = $null
+if ($finalOk -and $kitAction -ne 'None') {
+    Write-Hint (T 'b.kit.building' $kit.Path)
+    try {
+        $kitResult = New-RestoreKit -Path $kit.Path -ToolSource $kitAction
+    } catch {
+        $kitResult = [pscustomobject]@{ Path = $kit.Path; Ok = $false; Problems = @($_.Exception.Message); State = 'NoTools' }
+    }
+    Write-LogLine -Path $artifacts.Log -Message "Restore kit: path=$($kit.Path) source=$kitAction ok=$($kitResult.Ok) problems=$($kitResult.Problems -join '; ')"
+}
+
 $archiveBytes = (Get-Item -LiteralPath $artifacts.Archive).Length
-$speed = if ($result.Duration.TotalSeconds -gt 0) { [int64]($archiveBytes / $result.Duration.TotalSeconds) } else { 0 }
+$speed =if ($result.Duration.TotalSeconds -gt 0) { [int64]($archiveBytes / $result.Duration.TotalSeconds) } else { 0 }
 
 # ---------------------------------------------------------------------------
 # 9. Manifest, logs, summary
@@ -332,6 +374,11 @@ $report[(T 'f.duration')] = T 'b.report.duration' (Format-Duration $result.Durat
 $report[(T 'f.verify')]   = if ($verifyState -eq 'failed') { @($verifyText, 'Error') } else { $verifyText }
 $report[(T 'f.skipped')]  = if ($skippedFiles.Count -gt 0) { @((T 'b.report.skipped' $skippedFiles.Count), 'Warn') } else { T 'b.report.none' }
 if ($archiveHash) { $report['SHA256'] = $archiveHash }
+if ($kitResult) {
+    $report[(T 'f.kit')] = if ($kitResult.Ok) { $kitResult.Path } else { @((T 'b.kit.failed' ($kitResult.Problems -join '; ')), 'Warn') }
+} elseif ($kit.State -eq 'Ready') {
+    $report[(T 'f.kit')] = $kit.Path
+}
 $report[(T 'f.manifest')] = $artifacts.Manifest
 
 $summaryLines = [System.Collections.Generic.List[string]]::new()
@@ -375,8 +422,9 @@ if (-not $finalOk) {
 } else {
     Write-Host ''
     Write-Text (T 'b.next.title')
+    $kitReady = ($kitResult -and $kitResult.Ok) -or ($kit.State -eq 'Ready')
     Write-Hint (T 'b.next.1')
-    Write-Hint (T 'b.next.2')
+    Write-Hint $(if ($kitReady) { T 'b.next.2_kit' (Join-Path $kit.Path 'Migrator.bat') } else { T 'b.next.2' })
     Write-Hint (T 'b.next.3')
 }
 

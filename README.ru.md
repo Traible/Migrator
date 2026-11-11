@@ -11,7 +11,7 @@ Migrator — небольшой инструмент на PowerShell для пе
 восстанавливает их в ту же, другую или новую учётную запись.
 
 ```text
-  Migrator  v2.1.0
+  Migrator  v2.2.0
   ====================================================================
   Резервная копия и восстановление профиля пользователя Windows
 
@@ -97,6 +97,35 @@ Migrator — небольшой инструмент на PowerShell для пе
 папки с облачными файлами исключаются; ключ
 `-CloudFolders Exclude|Include|Auto` меняет это поведение.
 
+## Комплект для восстановления: для нового компьютера без интернета
+
+На только что установленной системе часто нет ни PowerShell 7, ни 7-Zip, ни
+драйвера сети. При создании копии Migrator предлагает положить рядом с
+архивом **комплект для восстановления** — копию Migrator с обеими программами
+внутри.
+
+```text
+E:\MigratorBackups\PC-alex-2026-11-11_10-00-00.7z
+E:\MigratorBackups\Migrator\Migrator.bat        <- запустите на новом компьютере
+E:\MigratorBackups\Migrator\Tools\pwsh, Tools\7-Zip
+```
+
+- **Скопировать установленные программы** (по умолчанию) — около 250 МБ,
+  интернет не нужен, те же версии, с которыми только что прошла копия.
+- **Скачать PowerShell** из официального релиза — проверяются хэш и подпись
+  Microsoft.
+- Вопрос задаётся один раз на папку с копиями: существующий комплект
+  используется повторно, а его скрипты обновляются после обновления Migrator.
+- Автоматический запуск: `-RestoreKit Copy|Download|None` (по умолчанию
+  `None`).
+
+Если архивы сохраняются внутри самой папки Migrator, комплектом становится
+она: заполняется только её папка `Tools\`. То же самое можно сделать из меню:
+«Проверить нужные программы».
+
+Если запустить `Migrator.bat` на компьютере без PowerShell 7 и без комплекта,
+он предложит установить PowerShell 7 и 7-Zip (нужен интернет).
+
 ## Восстановление
 
 - **Из архива** — `.7z`, созданный Migrator, или `.rar` от версии 2.0. Файлы
@@ -124,7 +153,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 
 | Скрипт | Ключи |
 |---|---|
-| `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
+| `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-RestoreKit None\|Copy\|Download`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
 | `restore.ps1` | `-Method Archive\|WindowsOld`, `-Archive`, `-SourceUser`, `-TargetUser`, `-TargetPath`, `-CreateUser`, `-Verify`, `-NoVerify`, `-Force`, `-NonInteractive` |
 | `main.ps1` | `-Language en\|ru\|auto` |
 
@@ -191,7 +220,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 93 проверки, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 104 проверки, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 
@@ -209,5 +238,5 @@ src\locale\en.psd1, ru.psd1              строки интерфейса
 
 ## Лицензия
 
-MIT — см. [LICENSE](LICENSE). Сторонние программы и их лицензии перечислены в
+MIT, © 2026 Артем Осадчий (Artem Osadchyi) — см. [LICENSE](LICENSE). Сторонние программы и их лицензии перечислены в
 [THIRD-PARTY.md](THIRD-PARTY.md). История версий: [CHANGELOG.md](CHANGELOG.md).

@@ -65,12 +65,12 @@ Write-Host ''
 Write-Host '2. Modules, configuration, localization' -ForegroundColor Yellow
 
 $env:MIGRATOR_LANG = 'en'
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.1.0') 'Tool version is 2.1.0'
+Assert-True ([string]$config.ToolVersion -eq '2.2.0') 'Tool version is 2.2.0'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -277,6 +277,36 @@ if ($SkipIntegration -or -not $archiver) {
             $cloudEntries = @(& $archiver l -ba -sccUTF-8 $cloudArchive.FullName | ForEach-Object { if ($_.Length -gt 53) { $_.Substring(53) } })
             Assert-True ($cloudEntries -notcontains 'OneDrive\local.txt' -and $cloudEntries -contains 'Documents\report.txt') 'OneDrive folder is excluded, other files are kept'
         }
+
+        # --- restore kit ---------------------------------------------------------
+        # Migrator + portable PowerShell and 7-Zip next to the archive; the kit
+        # must restore on its own, using only its own tools and finding the
+        # archive in its parent folder.
+        $kitBackups = Join-Path $base 'BackupsKit'
+        $kitRun = Invoke-Script $backupScript @('-SourcePath', $source, '-Destination', $kitBackups, '-NonInteractive', '-NoVerify', '-RestoreKit', 'Copy')
+        $kitPath = Join-Path $kitBackups 'Migrator'
+        if ($kitRun.ExitCode -ne 0) { $kitRun.Output | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray } }
+        Assert-True ($kitRun.ExitCode -eq 0) 'backup.ps1 -RestoreKit Copy completes'
+        Assert-True ((Get-RestoreKitPath -Destination $kitBackups) -eq $kitPath) 'Kit path is a Migrator folder next to the archives'
+        Assert-True ((Get-RestoreKitPath -Destination (Join-Path $toolRoot 'Backups')) -eq $toolRoot) 'Backups inside the Migrator folder: the folder itself is the kit'
+        Assert-True ((Test-RestoreKit -Path $kitPath).State -eq 'Ready') 'Kit is complete: scripts, PowerShell and 7-Zip'
+        Assert-True ((Test-RestoreKit -Path (Join-Path $base 'no-kit')).State -eq 'Missing') 'A missing kit is reported as missing'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $kitPath 'Tools\WinRAR'))) 'Kit contains only redistributable tools'
+
+        $kitPwsh = Join-Path $kitPath 'Tools\pwsh\pwsh.exe'
+        if (Test-Path -LiteralPath $kitPwsh) {
+            $env:MIGRATOR_LANG = 'en'
+            $kitOutput = & $kitPwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $kitPath 'src\restore.ps1') `
+                -Method Archive -TargetPath (Join-Path $base 'Kit Target') -NonInteractive 2>&1
+            $kitExit = $LASTEXITCODE
+            if ($kitExit -ne 0) { $kitOutput | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray } }
+            Assert-True ($kitExit -eq 0) 'Kit restores with its own PowerShell and finds the archive in the parent folder'
+            Assert-True (Test-Path -LiteralPath (Join-Path $base 'Kit Target\Documents\report.txt')) 'Kit restore extracted the files'
+            Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $kitPath 'Logs') -Filter 'restore-*.log' -ErrorAction SilentlyContinue).Count -gt 0) 'Kit writes its log inside the kit, not into the source Migrator folder'
+        }
+
+        $second = Invoke-Script $backupScript @('-SourcePath', $source, '-Destination', $kitBackups, '-NonInteractive', '-NoVerify')
+        Assert-True ($second.ExitCode -eq 0 -and [bool]($second.Output -match 'already at')) 'A second backup finds the existing kit and does not rebuild it'
 
         # --- restore -----------------------------------------------------------
         if ($archive) {

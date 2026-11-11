@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0 — 2026-11-11
+
+### Added
+
+- **Restore kit.** A backup can put a copy of Migrator with portable PowerShell 7 and 7-Zip next to the archive (`<backup folder>\Migrator`), so a new PC with no tools and no internet can restore straight from the external drive. The programs are copied from the ones installed on the PC (default, offline) or PowerShell is downloaded from the official release. The kit looks for archives in its parent folder, keeps the interface language, is reused by later backups and gets its scripts refreshed after an update. New switch `-RestoreKit Copy|Download|None`.
+- When the archives are saved inside the Migrator folder, that folder itself is made self-contained; the same is offered in *Check required tools*.
+- `Migrator.bat` offers to install PowerShell 7 and 7-Zip when PowerShell 7 is missing, instead of only printing a hint.
+
+### Tests
+
+- 104 smoke tests; the new ones build a kit and restore with the kit's own PowerShell.
+
 ## 2.1.0 — 2026-11-11
 
 ### Changed: archiver
