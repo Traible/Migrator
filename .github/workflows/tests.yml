@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # PowerShell 7 and 7-Zip are preinstalled on the Windows runner.
+      - name: Show tool versions
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion
+          & "$env:ProgramFiles\7-Zip\7z.exe" | Select-Object -First 2
+
+      - name: PSScriptAnalyzer (errors only)
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $issues = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
+          $issues | Format-Table -AutoSize
+          if ($issues) { exit 1 }
+
+      - name: Smoke tests
+        shell: pwsh
+        run: ./tests/Smoke.Tests.ps1

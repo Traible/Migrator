@@ -1,0 +1,15 @@
+{
+  "Language": "auto",
+  "DefaultMode": "Full",
+  "Compression": 0,
+  "VerifyAfterBackup": true,
+  "VerifyBeforeRestore": false,
+  "ComputeSha256": false,
+  "CloudFolderPolicy": "Auto",
+  "ExcludeDevCaches": false,
+  "BackupRoot": "Backups",
+  "LogRoot": "Logs",
+  "Unicode": true,
+  "ArchiverPath": "Tools\\7-Zip\\7z.exe",
+  "ExtraExcludes": []
+}
