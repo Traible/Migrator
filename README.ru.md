@@ -238,5 +238,5 @@ src\locale\en.psd1, ru.psd1              строки интерфейса
 
 ## Лицензия
 
-MIT, © 2026 Артем Осадчий (Artem Osadchyi) — см. [LICENSE](LICENSE). Сторонние программы и их лицензии перечислены в
+MIT, © 2025-2026 Артем Осадчий (Artem Osadchyi) — см. [LICENSE](LICENSE). Сторонние программы и их лицензии перечислены в
 [THIRD-PARTY.md](THIRD-PARTY.md). История версий: [CHANGELOG.md](CHANGELOG.md).

@@ -232,6 +232,6 @@ the values; the tests check that every key is present.
 
 ## License
 
-MIT, © 2026 Artem Osadchyi - see [LICENSE](LICENSE). Third-party programs and their licenses are
+MIT, © 2025-2026 Artem Osadchyi - see [LICENSE](LICENSE). Third-party programs and their licenses are
 listed in [THIRD-PARTY.md](THIRD-PARTY.md). Version history:
 [CHANGELOG.md](CHANGELOG.md).
