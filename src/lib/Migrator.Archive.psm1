@@ -55,8 +55,36 @@ function Get-ArchiverExitMessage {
     }
 }
 
-function Get-LastPercent {
-    # Reads the last "NN%" progress mark from the tail of 7-Zip's stdout.
+function ConvertFrom-ArchiverProgress {
+    # Parses the last progress mark of 7-Zip's stdout:
+    #     "\r 45% 1234 + Documents\report.docx"
+    # -> percent, number of files processed so far, current file.
+    # Marks start a line, so a '%' inside a file name is never mistaken for one.
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Text)
+
+    $found = [regex]::Matches(($Text ?? ''), '(?:^|[\r\n\x08])[ \t]*(\d{1,3})%(?:[ \t]+(\d+))?(?:[ \t]+[-+TUR=.][ \t]+([^\r\n\x08]*))?')
+    if ($found.Count -eq 0) { return $null }
+    $last = $found[$found.Count - 1]
+
+    # The newest mark may still be half-written; take the file count and name
+    # from the previous one when it has none yet.
+    $files = $null
+    $current = ''
+    for ($i = $found.Count - 1; $i -ge 0 -and $i -ge $found.Count - 3; $i--) {
+        if ($null -eq $files -and $found[$i].Groups[2].Success) { $files = [int64]$found[$i].Groups[2].Value }
+        if (-not $current -and $found[$i].Groups[3].Success) { $current = $found[$i].Groups[3].Value.Trim() }
+    }
+
+    return [pscustomobject]@{
+        Percent = [int]$last.Groups[1].Value
+        Files   = $files
+        Current = $current
+    }
+}
+
+function Get-ArchiverProgress {
+    # Reads the tail of 7-Zip's stdout file while the archiver is running.
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
 
@@ -72,12 +100,7 @@ function Get-LastPercent {
         } finally {
             $stream.Dispose()
         }
-
-        # Progress marks start a line ("\r 45% 123 + name"), so a '%' inside a
-        # file name is never mistaken for one.
-        $found = [regex]::Matches([Text.Encoding]::UTF8.GetString($buffer), '(?:^|[\r\n])\s*(\d{1,3})%')
-        if ($found.Count -eq 0) { return $null }
-        return [int]$found[$found.Count - 1].Groups[1].Value
+        return ConvertFrom-ArchiverProgress -Text ([Text.Encoding]::UTF8.GetString($buffer))
     } catch {
         return $null
     }
@@ -170,6 +193,7 @@ function Invoke-Archiver {
         [Parameter(Mandatory)][string[]]$Arguments,
         [string]$Activity = '7-Zip',
         [int64]$TotalBytes = 0,
+        [int64]$TotalFiles = 0,
         [string]$GrowthFile,
         [switch]$NoProgress
     )
@@ -186,7 +210,7 @@ function Invoke-Archiver {
     $stderrPath = Join-Path $env:TEMP "migrator-7z-$PID-$id.err"
     $commandLine = ConvertTo-NativeCommandLine -Arguments $Arguments
     $started = Get-Date
-    $progress = New-ProgressState -Activity $Activity -TotalBytes $TotalBytes
+    $progress = New-ProgressState -Activity $Activity -TotalBytes $TotalBytes -TotalFiles $TotalFiles
 
     try {
         $process = Start-Process -FilePath $ArchiverPath -ArgumentList $commandLine `
@@ -197,7 +221,8 @@ function Invoke-Archiver {
             Start-Sleep -Milliseconds $pollMs
             if ($NoProgress) { continue }
 
-            $percent = Get-LastPercent -Path $stdoutPath
+            $mark = Get-ArchiverProgress -Path $stdoutPath
+            $percent = if ($mark) { $mark.Percent } else { $null }
             $bytesDone = $null
             if ($GrowthFile -and $TotalBytes -gt 0) {
                 try {
@@ -205,7 +230,9 @@ function Invoke-Archiver {
                     if ($growth.Exists) { $bytesDone = $growth.Length }
                 } catch { }
             }
-            Update-ProgressState -State $progress -Percent $percent -BytesDone $bytesDone
+            Update-ProgressState -State $progress -Percent $percent -BytesDone $bytesDone `
+                -FilesDone $(if ($mark) { $mark.Files } else { $null }) `
+                -Current $(if ($mark) { $mark.Current } else { '' })
         }
 
         $process.WaitForExit()
@@ -279,6 +306,7 @@ function New-ProfileArchive {
         [string[]]$ExcludeNameMasks = @(),
         [ValidateRange(0, 9)][int]$Compression = 0,
         [int64]$TotalBytes = 0,
+        [int64]$TotalFiles = 0,
         [string]$Activity = '7-Zip',
         [switch]$NoProgress
     )
@@ -306,6 +334,7 @@ function New-ProfileArchive {
             Arguments    = $arguments
             Activity     = $Activity
             TotalBytes   = $TotalBytes
+            TotalFiles   = $TotalFiles
             NoProgress   = $NoProgress
         }
         # Without compression the archive grows byte for byte with the data.
@@ -339,6 +368,7 @@ function Expand-ProfileArchive {
         [string[]]$ExcludePaths = @(),
         [string[]]$ExcludeNameMasks = @(),
         [int64]$TotalBytes = 0,
+        [int64]$TotalFiles = 0,
         [string]$Activity = '7-Zip',
         [switch]$NoProgress
     )
@@ -357,7 +387,7 @@ function Expand-ProfileArchive {
         ) + $exclude.Arguments + @($ArchivePath)
 
         return Invoke-Archiver -ArchiverPath $ArchiverPath -Arguments $arguments -Activity $Activity `
-            -TotalBytes $TotalBytes -NoProgress:$NoProgress
+            -TotalBytes $TotalBytes -TotalFiles $TotalFiles -NoProgress:$NoProgress
     } finally {
         foreach ($file in $exclude.Files) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
     }
@@ -458,7 +488,8 @@ Export-ModuleMember -Function @(
     'Get-ArchiverPath'
     'Get-ArchiverVersion'
     'Get-ArchiverExitMessage'
-    'Get-LastPercent'
+    'ConvertFrom-ArchiverProgress'
+    'Get-ArchiverProgress'
     'Get-ArchiverIssues'
     'Get-ArchiveOutcome'
     'Invoke-Archiver'

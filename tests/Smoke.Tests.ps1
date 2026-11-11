@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.2.0') 'Tool version is 2.2.0'
+Assert-True ([string]$config.ToolVersion -eq '2.2.1') 'Tool version is 2.2.1'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -146,8 +146,54 @@ Assert-True ((ConvertTo-NativeArgument 'a b\') -eq '"a b\\"') 'Trailing backslas
 Assert-True (Test-PathWithin -Child 'C:\Users\A\Desktop' -Parent 'C:\Users\A') 'Child path is detected'
 Assert-True (-not (Test-PathWithin -Child 'C:\Users\AB' -Parent 'C:\Users\A')) 'Prefix-only sibling is not a child'
 
-$line = Format-ProgressLine -Activity 'Backup' -Percent 50 -BytesPerSecond (100MB) -Remaining ([TimeSpan]::FromSeconds(75)) -BarWidth 10
-Assert-True ($line -match ' 50%' -and $line -match '/s' -and $line -match '01:15 left') "Progress line has percent, speed and remaining time: $line"
+$line = Format-ProgressLine -Activity 'Backup' -Percent 50 -BytesPerSecond (100MB) -RemainingSeconds 200 `
+    -FilesDone 12400 -TotalFiles 40000 -Current 'AppData\Roaming\App' -BarWidth 10
+Assert-True ($line -match ' 50%' -and $line -match '/s' -and $line -match 'about 4 min left' -and $line -match 'files' -and $line -match 'Roaming') "Progress line has percent, current speed, files, remaining time and folder: $line"
+Assert-True ((Format-ProgressLine -Activity 'x' -Percent 1 -Estimating) -match 'estimating') 'Progress line says "estimating" instead of a made-up time'
+Assert-True ((Format-RemainingTime -Seconds 20) -match 'less than a minute') 'Remaining time: under a minute'
+Assert-True ((Format-RemainingTime -Seconds 7300) -eq 'about 2 h 0 min left') 'Remaining time: hours are rounded to 5 minutes'
+
+$mark = ConvertFrom-ArchiverProgress -Text "  0M Scan `r          `r  0%`r    `r 45% 1234 + Documents\report 100%.docx`r"
+Assert-True ($mark.Percent -eq 45 -and $mark.Files -eq 1234 -and $mark.Current -eq 'Documents\report 100%.docx') 'Archiver progress mark: percent, file count and current file are parsed'
+Assert-True ($null -eq (ConvertFrom-ArchiverProgress -Text '  0M Scan ')) 'Archiver progress mark: nothing to parse while scanning'
+
+# Remaining-time model: time = bytes x cost + files x cost.
+function Invoke-EtaSimulation {
+    # Phases: @{ Mb; Files; Seconds } processed one after another at a steady
+    # pace. Returns the forecast and the true remaining time at -AskAt seconds.
+    param([object[]]$Phases, [double]$AskAt)
+    $totalMb = ($Phases | ForEach-Object { $_.Mb } | Measure-Object -Sum).Sum
+    $totalFiles = ($Phases | ForEach-Object { $_.Files } | Measure-Object -Sum).Sum
+    $totalSeconds = ($Phases | ForEach-Object { $_.Seconds } | Measure-Object -Sum).Sum
+    $estimator = New-EtaEstimator -TotalBytes ([int64]($totalMb * 1MB)) -TotalFiles ([int64]$totalFiles)
+    $forecast = $null
+    for ($t = 1; $t -le $AskAt; $t++) {
+        $mb = 0.0; $files = 0.0; $start = 0.0
+        foreach ($phase in $Phases) {
+            $part = [Math]::Max(0.0, [Math]::Min(1.0, ($t - $start) / $phase.Seconds))
+            $mb += $phase.Mb * $part; $files += $phase.Files * $part; $start += $phase.Seconds
+        }
+        $forecast = Update-EtaEstimator -Estimator $estimator -Seconds $t -Bytes ($mb * 1MB) -Files $files
+    }
+    return [pscustomobject]@{ Forecast = $forecast; Truth = $totalSeconds - $AskAt }
+}
+
+# 50 GB of large files at 500 MB/s, then 300,000 small files (3 GB) at ~2 ms each.
+$largeThenSmall = @(@{ Mb = 50000; Files = 100; Seconds = 100 }, @{ Mb = 3000; Files = 300000; Seconds = 600 })
+$sim = Invoke-EtaSimulation -Phases $largeThenSmall -AskAt 160
+$naive = 2000 * 1.0 / (3000 / 600)      # remaining bytes / current byte speed, for comparison
+Assert-True ($sim.Forecast -gt $sim.Truth / 2 -and $sim.Forecast -lt $sim.Truth * 2) ("Forecast in the small-file phase is within 2x of the truth ({0:N0} s vs {1:N0} s)" -f $sim.Forecast, $sim.Truth)
+
+# The same data in the opposite order: small files first, 50 GB of large files still ahead.
+$smallThenLarge = @(@{ Mb = 3000; Files = 300000; Seconds = 600 }, @{ Mb = 50000; Files = 100; Seconds = 100 })
+$sim = Invoke-EtaSimulation -Phases $smallThenLarge -AskAt 120
+$naive = (53000 - 600) / (3000 / 600)   # what "remaining bytes / current speed" would say: ~3 hours
+Assert-True ($sim.Forecast -lt $sim.Truth * 2.5 -and $sim.Forecast -gt $sim.Truth / 2.5) ("Small files first: forecast {0:N0} s, truth {1:N0} s, bytes-only forecast {2:N0} s" -f $sim.Forecast, $sim.Truth, $naive)
+Assert-True ($naive -gt $sim.Truth * 10) 'The bytes-only forecast is off by more than 10x in that case'
+
+# A slow drive (30 MB/s, large files): the forecast must follow the real speed.
+$sim = Invoke-EtaSimulation -Phases @(@{ Mb = 30000; Files = 60; Seconds = 1000 }) -AskAt 120
+Assert-True ($sim.Forecast -gt $sim.Truth * 0.7 -and $sim.Forecast -lt $sim.Truth * 1.3) ("Slow drive: forecast {0:N0} s, truth {1:N0} s" -f $sim.Forecast, $sim.Truth)
 
 $state = New-ProgressState -Activity 'x' -TotalBytes 1000
 $state.Interactive = $false

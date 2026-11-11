@@ -25,7 +25,11 @@
     'ui.menu_invalid' = 'Такого пункта нет.'
 
     'progress.preparing' = 'поиск файлов...'
-    'progress.remaining' = 'осталось {0}'
+    'progress.files' = 'файлов {0:N0} из {1:N0}'
+    'progress.eta_estimating' = 'оценка времени...'
+    'progress.eta_less_minute' = 'осталось меньше минуты'
+    'progress.eta_minutes' = 'осталось около {0} мин'
+    'progress.eta_hours' = 'осталось около {0} ч {1} мин'
     'progress.elapsed'   = 'прошло {0}'
 
     'profile.current' = '(текущий пользователь)'

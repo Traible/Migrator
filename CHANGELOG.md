@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.1 — 2026-11-11
+
+### Changed
+
+- **Remaining time is estimated from bytes and files together.** The old forecast divided the remaining bytes by the current speed, so it was far too optimistic while large files were copied and jumped to many hours on small ones. The new model fits two costs to the work already done - seconds per megabyte and seconds per file - and applies them to the remaining bytes and the remaining files. On a simulated profile (300,000 small files first, 50 GB of large files after) the forecast is 736 s against a true 580 s; the old method says 10,480 s.
+- The progress line now shows the current speed, files done out of the total, a rounded and smoothed remaining time ("about 4 min left") and the folder being processed. "Estimating time..." is shown until there is enough data.
+- The current speed stays in the line on purpose: a drive plugged into a slow USB port is visible at once.
+
 ## 2.2.0 — 2026-11-11
 
 ### Added

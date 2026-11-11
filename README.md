@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.2.0
+  Migrator  v2.2.1
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -31,7 +31,7 @@ same, another or a brand-new account.
    ...
    Up/Down - move, Enter - select, Esc - back
 
-  Backing up alex ██████████████░░░░░░░░░░░░░░  52%  310.4 MB/s  01:12 left
+  Backing up alex ██████████████░░░░░░░░░░  52%  310.4 MB/s  12,400 / 40,000 files  about 4 min left  DocumentsProjects
 ```
 
 ## Features
@@ -214,7 +214,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 104 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 113 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

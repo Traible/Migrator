@@ -275,7 +275,7 @@ Write-LogLine -Path $artifacts.Log -Message "Backup started: user=$userName mode
 
 $result = New-ProfileArchive -ArchiverPath $archiver -SourcePath $sourcePath -ArchivePath $artifacts.Archive `
     -ExcludePaths $excludePaths -ExcludeNameMasks $nameMasks -Compression $compression `
-    -TotalBytes $sourceBytes -Activity (T 'b.activity' $userName)
+    -TotalBytes $sourceBytes -TotalFiles $scan.Files -Activity (T 'b.activity' $userName)
 
 if (-not (Test-Path -LiteralPath $artifacts.Archive -PathType Leaf)) {
     $message = Get-ArchiverExitMessage $result.ExitCode

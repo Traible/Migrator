@@ -25,7 +25,11 @@
     'ui.menu_invalid' = 'There is no such option.'
 
     'progress.preparing' = 'scanning files...'
-    'progress.remaining' = '{0} left'
+    'progress.files' = '{0:N0} / {1:N0} files'
+    'progress.eta_estimating' = 'estimating time...'
+    'progress.eta_less_minute' = 'less than a minute left'
+    'progress.eta_minutes' = 'about {0} min left'
+    'progress.eta_hours' = 'about {0} h {1} min left'
     'progress.elapsed'   = '{0} elapsed'
 
     'profile.current' = '(current user)'

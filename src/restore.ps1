@@ -527,7 +527,7 @@ function Invoke-ArchiveRestoreFlow {
     Write-RestoreLog "Archive restore started: archive=$($metadata.ArchivePath) target=$($target.LocalPath) user=$($target.Name) excludedFolders=$($excludePaths.Count)"
     $result = Expand-ProfileArchive -ArchiverPath $archiver -ArchivePath $metadata.ArchivePath `
         -TargetPath $target.LocalPath -ExcludePaths $excludePaths -ExcludeNameMasks $nameMasks `
-        -TotalBytes $content.Bytes -Activity (T 'r.activity' $target.Name)
+        -TotalBytes $content.Bytes -TotalFiles $content.Files -Activity (T 'r.activity' $target.Name)
 
     $success = ($result.Outcome -ne 'Failed')
     $skippedFiles = @($result.SkippedFiles)
@@ -605,6 +605,7 @@ function Invoke-RobocopyRestore {
         [string[]]$ExcludeDirectories = @(),
         [string[]]$ExcludeFiles = @(),
         [int64]$TotalBytes = 0,
+        [int64]$TotalFiles = 0,
         [string]$Activity = 'robocopy'
     )
 
@@ -624,11 +625,12 @@ function Invoke-RobocopyRestore {
     Write-RestoreLog "Robocopy command: robocopy.exe $commandLine"
 
     $sizeRegex = [regex]'\t\s*(\d+)\t'
-    $progress = New-ProgressState -Activity $Activity -TotalBytes ([Math]::Max(1L, $TotalBytes))
+    $progress = New-ProgressState -Activity $Activity -TotalBytes ([Math]::Max(1L, $TotalBytes)) -TotalFiles $TotalFiles
     $started = Get-Date
     $process = Start-Process -FilePath 'robocopy.exe' -ArgumentList $commandLine -NoNewWindow -PassThru -ErrorAction Stop
 
     $copiedBytes = 0L
+    $copiedFiles = 0L
     $pending = ''
     $reader = $null
     $buffer = [char[]]::new(65536)
@@ -655,6 +657,7 @@ function Invoke-RobocopyRestore {
                 if ($lastNewLine -ge 0) {
                     foreach ($match in $sizeRegex.Matches($text.Substring(0, $lastNewLine))) {
                         $copiedBytes += [int64]$match.Groups[1].Value
+                        $copiedFiles++
                     }
                     $pending = $text.Substring($lastNewLine + 1)
                 } else {
@@ -662,7 +665,7 @@ function Invoke-RobocopyRestore {
                 }
             }
 
-            Update-ProgressState -State $progress -BytesDone $copiedBytes
+            Update-ProgressState -State $progress -BytesDone $copiedBytes -FilesDone $copiedFiles
         }
     } finally {
         if ($reader) { $reader.Dispose() }
@@ -730,7 +733,7 @@ function Invoke-WindowsOldRestoreFlow {
     Write-Host ''
     $result = Invoke-RobocopyRestore -Source $source.FullName -Destination $target.LocalPath `
         -LogPath $robocopyLog -ExcludeDirectories $excludeDirectories -ExcludeFiles $excludeFiles `
-        -TotalBytes $scan.Bytes -Activity (T 'r.activity' $target.Name)
+        -TotalBytes $scan.Bytes -TotalFiles $scan.Files -Activity (T 'r.activity' $target.Name)
 
     # Robocopy: 0-7 = success with details, 8+ = at least one failure.
     $success = $result.ExitCode -lt 8
