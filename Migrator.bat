@@ -9,6 +9,26 @@ REM  what is missing and installs nothing without a typed "Y".
 REM ============================================================
 
 set "BASE=%~dp0"
+
+REM Started from inside the ZIP (Explorer unpacks only this file to a
+REM temporary folder) or from an incomplete copy: say so instead of closing.
+if exist "%BASE%src\main.ps1" goto :FILES_OK
+chcp 65001 >nul
+echo.
+echo  Migrator cannot start: its files are not next to Migrator.bat.
+echo  If you opened Migrator.bat inside the downloaded ZIP archive, unpack the
+echo  whole archive first (right-click the ZIP, "Extract All"), then run
+echo  Migrator.bat from the unpacked folder.
+echo.
+echo  Migrator не может запуститься: рядом с Migrator.bat нет его файлов.
+echo  Если вы открыли Migrator.bat прямо в скачанном ZIP-архиве, сначала
+echo  распакуйте весь архив (правой кнопкой по ZIP, «Извлечь все»), затем
+echo  запустите Migrator.bat из распакованной папки.
+echo.
+pause
+exit /b 1
+
+:FILES_OK
 call :FIND_PWSH
 REM MIGRATOR_TEST_NO_PWSH lets the tests reach the branch below on a PC
 REM that has PowerShell 7.

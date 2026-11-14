@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.2.4') 'Tool version is 2.2.4'
+Assert-True ([string]$config.ToolVersion -eq '2.3.0') 'Tool version is 2.3.0'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -187,6 +187,29 @@ try {
 } finally {
     Remove-Item Env:MIGRATOR_TEST_NO_PWSH -ErrorAction SilentlyContinue
 }
+# Started from inside the ZIP: only the .bat is there, without its files.
+$loneDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force -Path $loneDir | Out-Null
+try {
+    Copy-Item -LiteralPath (Join-Path $toolRoot 'Migrator.bat') -Destination $loneDir
+    $out = @('' | cmd.exe /c "`"$(Join-Path $loneDir 'Migrator.bat')`"" 2>&1 | ForEach-Object { [string]$_ })
+    Assert-True ($LASTEXITCODE -eq 1 -and [bool]($out -match 'unpack the') -and -not [bool]($out -match 'is not recognized')) 'Launcher without its files explains that the archive must be unpacked'
+} finally {
+    Remove-Item -LiteralPath $loneDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Drives and folders a first-time user is likely to have.
+Assert-True ((Get-MaxFileBytes -FileSystem 'FAT32') -eq (4GB - 1) -and $null -eq (Get-MaxFileBytes -FileSystem 'NTFS') -and $null -eq (Get-MaxFileBytes -FileSystem 'exFAT') -and $null -eq (Get-MaxFileBytes -FileSystem $null)) 'FAT32 is known to hold files under 4 GB only; NTFS and exFAT have no such limit'
+Assert-True (-not [string]::IsNullOrWhiteSpace((Get-FileSystemName -Path $env:SystemDrive)) -and $null -eq (Get-FileSystemName -Path '\\server\share\folder')) 'File system of a local drive is read; a network path has none'
+$moved = @(Get-FoldersOutsideProfile -ProfilePath 'C:\Users\Alex' -ShellFolders @{
+    'Personal'    = 'D:\Docs'
+    'Desktop'     = '%USERPROFILE%\Desktop'
+    'My Pictures' = '%UserProfile%\OneDrive\Pictures'
+    'My Music'    = '\\nas\music\'
+})
+Assert-True ($moved.Count -eq 2 -and ($moved.Path -join '|') -eq 'D:\Docs|\\nas\music' -and $moved[0].Name -eq 'Documents') "Known folders moved out of the profile are reported, those inside it are not ($(($moved.Path) -join ', '))"
+Assert-True (Reset-SleepTimer -Force) 'Windows accepts the "PC is busy, do not sleep" call'
+
 $ruLocale = Import-PowerShellDataFile -LiteralPath (Join-Path $toolRoot 'src\locale\ru.psd1')
 Assert-True ($ruLocale['ui.yes_letter'] -eq 'y' -and $ruLocale['ui.no_letter'] -eq 'n') 'Russian interface asks y/n like the English one'
 Assert-True ((Format-RemainingTime -Seconds 20) -match 'less than a minute') 'Remaining time: under a minute'
@@ -330,6 +353,7 @@ if ($SkipIntegration -or -not $archiver) {
         $archive = Get-ChildItem -LiteralPath $backups -Filter '*.7z' -File -ErrorAction SilentlyContinue | Select-Object -First 1
         $manifestFile = Get-ChildItem -LiteralPath $backups -Filter '*.manifest.json' -File -ErrorAction SilentlyContinue | Select-Object -First 1
         Assert-True ($null -ne $archive) 'Archive (.7z) was created'
+        Assert-True (@(Get-ChildItem -LiteralPath $backups -Filter '*.partial' -File).Count -eq 0) 'No temporary ".partial" archive is left after a finished backup'
         Assert-True ($null -ne $manifestFile) 'Manifest was created'
         Assert-True ($null -ne (Get-ChildItem -LiteralPath $backups -Filter '*.summary.txt' -File | Select-Object -First 1)) 'Summary was created'
         # Only files that appeared during this backup count: another Migrator
@@ -400,6 +424,25 @@ if ($SkipIntegration -or -not $archiver) {
 
         $second = Invoke-Script $backupScript @('-SourcePath', $source, '-Destination', $kitBackups, '-NonInteractive', '-NoVerify')
         Assert-True ($second.ExitCode -eq 0 -and [bool]($second.Output -match 'already at')) 'A second backup finds the existing kit and does not rebuild it'
+
+        # --- a folder moved out of the profile, and an unfinished archive -------
+        $movedSource = Join-Path $base 'Moved Profile'
+        $movedMusic = Join-Path $base 'Music On Another Disk'
+        $movedBackups = Join-Path $base 'BackupsMoved'
+        New-Item -ItemType Directory -Force -Path (Join-Path $movedSource 'Documents'), $movedMusic, $movedBackups | Out-Null
+        Set-Content -LiteralPath (Join-Path $movedSource 'Documents\a.txt') -Value 'a'
+        Set-Content -LiteralPath (Join-Path $movedMusic 'song.mp3') -Value 'la'
+        cmd.exe /c mklink /J (Join-Path $movedSource 'Music') $movedMusic | Out-Null
+        $junctions.Add((Join-Path $movedSource 'Music'))
+        $leftover = Join-Path $movedBackups 'PC-user-2026-01-01_00-00-00.7z.partial'
+        Set-Content -LiteralPath $leftover -Value 'cut short'
+        $movedBackup = Invoke-Script $backupScript @('-SourcePath', $movedSource, '-Destination', $movedBackups, '-NonInteractive', '-NoVerify')
+        Assert-True ($movedBackup.ExitCode -eq 0 -and [bool]($movedBackup.Output -match 'will NOT be in this backup') -and [bool]($movedBackup.Output -match 'Music On Another Disk')) 'Backup names a folder that is a link leading out of the profile'
+        $movedManifestFile = Get-ChildItem -LiteralPath $movedBackups -Filter '*.manifest.json' -File | Select-Object -First 1
+        $movedManifest = if ($movedManifestFile) { Get-Content -LiteralPath $movedManifestFile.FullName -Raw | ConvertFrom-Json -AsHashtable } else { @{} }
+        Assert-True ([bool](@($movedManifest['foldersOutsideProfile']) -match '^Music -> ')) 'Manifest records the folders that are not in the archive'
+        Assert-True ([bool]($movedBackup.Output -match 'Unfinished backups found') -and (Test-Path -LiteralPath $leftover)) 'An unfinished archive is reported and, without a question, kept'
+        Assert-True (@(Get-ArchiveList -BackupRoot $movedBackups).Count -eq 1) 'An unfinished archive is not listed as a backup'
 
         # --- restore -----------------------------------------------------------
         if ($archive) {

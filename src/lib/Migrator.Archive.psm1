@@ -258,6 +258,7 @@ function Invoke-Archiver {
 
         while (-not $process.HasExited) {
             Start-Sleep -Milliseconds $pollMs
+            [void](Reset-SleepTimer)   # the PC must not fall asleep half-way
             if ($NoProgress) { continue }
 
             $mark = Get-ArchiverProgress -Path $stdoutPath
@@ -351,6 +352,10 @@ function New-ProfileArchive {
     )
 
     $exclude = Get-ExcludeArguments -ExactPaths $ExcludePaths -NameMasks $ExcludeNameMasks
+    # The archive is written under a temporary name and renamed when 7-Zip
+    # has finished. A run that was cut short (window closed, power lost)
+    # leaves "<name>.7z.partial", which is never mistaken for a backup.
+    $partialPath = "$ArchivePath.partial"
     try {
         $arguments = @(
             'a'
@@ -364,7 +369,7 @@ function New-ProfileArchive {
             '-bsp1'         # progress to stdout
             '-y'
         ) + $exclude.Arguments + @(
-            $ArchivePath
+            $partialPath
             ($SourcePath.TrimEnd('\') + '\*')
         )
 
@@ -377,8 +382,23 @@ function New-ProfileArchive {
             NoProgress   = $NoProgress
         }
         # Without compression the archive grows byte for byte with the data.
-        if ($Compression -eq 0) { $splat.GrowthFile = $ArchivePath }
-        return Invoke-Archiver @splat
+        if ($Compression -eq 0) { $splat.GrowthFile = $partialPath }
+        $result = Invoke-Archiver @splat
+
+        # 7-Zip has finished (with or without warnings): give the archive its
+        # real name. An antivirus may hold the new file for a moment.
+        if (Test-Path -LiteralPath $partialPath -PathType Leaf) {
+            for ($attempt = 1; $attempt -le 10; $attempt++) {
+                try {
+                    Move-Item -LiteralPath $partialPath -Destination $ArchivePath -Force -ErrorAction Stop
+                    break
+                } catch {
+                    if ($attempt -eq 10) { throw }
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+        }
+        return $result
     } finally {
         foreach ($file in $exclude.Files) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
     }

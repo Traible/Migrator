@@ -107,8 +107,19 @@ $defaultDestination = Resolve-MigratorPath $config.BackupRoot
 
 if (-not $Destination -and $interactive) {
     $items = [System.Collections.Generic.List[object]]::new()
-    $items.Add((New-MenuItem -Value $defaultDestination -Label $defaultDestination `
-        -Hint (T 'b.dest.default_hint' (Format-Size (Get-FreeSpaceBytes -Path $defaultDestination)))))
+    if (Test-PathWithin -Child $defaultDestination -Parent $sourcePath) {
+        # Migrator itself was unpacked inside the profile being backed up
+        # (Desktop, Downloads): the archive cannot be kept there, because it
+        # would have to contain itself. Offer a folder outside the profile.
+        Write-Host ''
+        Write-Hint (T 'b.dest.inside_profile_hint')
+        $outsideProfile = Join-Path ([IO.Path]::GetPathRoot($sourcePath)) 'MigratorBackups'
+        $items.Add((New-MenuItem -Value $outsideProfile -Label $outsideProfile `
+            -Hint (T 'b.dest.same_disk_hint' (Format-Size (Get-FreeSpaceBytes -Path $outsideProfile)))))
+    } else {
+        $items.Add((New-MenuItem -Value $defaultDestination -Label $defaultDestination `
+            -Hint (T 'b.dest.default_hint' (Format-Size (Get-FreeSpaceBytes -Path $defaultDestination)))))
+    }
     foreach ($volume in @(Get-TargetVolumes)) {
         $label = if ($volume.Label) { $volume.Label } else { T 'b.dest.no_label' }
         $items.Add((New-MenuItem -Value "$($volume.Drive)\MigratorBackups" -Label "$($volume.Drive)\MigratorBackups" `
@@ -133,6 +144,27 @@ if (Test-PathWithin -Child $Destination -Parent $sourcePath) { throw (T 'b.error
 if (Test-PathWithin -Child $sourcePath -Parent $Destination) { throw (T 'b.error.source_inside_dest' $sourcePath) }
 
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+
+# Archives of runs that were cut short (window closed, power lost). They
+# cannot be opened; they only take space. One that another Migrator is
+# writing right now is locked and is left alone.
+$unfinished = @(Get-ChildItem -LiteralPath $Destination -Filter '*.7z.partial' -File -ErrorAction SilentlyContinue | Where-Object {
+    try { $stream = [IO.File]::Open($_.FullName, 'Open', 'ReadWrite', 'None'); $stream.Dispose(); $true } catch { $false }
+})
+if ($unfinished.Count -gt 0) {
+    $unfinishedBytes = [int64](($unfinished | Measure-Object -Property Length -Sum).Sum)
+    Write-Host ''
+    Write-Warn (T 'b.warn.unfinished' $unfinished.Count (Format-Size $unfinishedBytes))
+    foreach ($file in $unfinished) { Write-Hint "  $($file.Name)" }
+    if ($interactive -and (Read-YesNo (T 'b.ask.delete_unfinished') $false)) {
+        foreach ($file in $unfinished) { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue }
+        Write-Ok (T 'b.unfinished_deleted' (Format-Size $unfinishedBytes))
+    }
+}
+
+# Personal folders that are not inside the profile folder will not be in the
+# archive; the user has to know before relying on this backup.
+$outsideFolders = @(Get-FoldersOutsideProfile -ProfilePath $sourcePath -Sid $(if ($profile) { [string]$profile.SID } else { '' }))
 
 # ---------------------------------------------------------------------------
 # 4. Exclusions, cloud folders, one scan of the profile
@@ -217,6 +249,16 @@ if ($excludedCloudFolders.Count -gt 0) { $plan[(T 'f.cloud_excluded')] = ($exclu
 $plan[(T 'f.archive')]     = $artifacts.Archive
 $plan[(T 'f.free_space')]  = if ($lowSpace) { @((Format-Size $freeBytes), 'Warn') } else { Format-Size $freeBytes }
 $plan[(T 'f.compression')] = if ($compression -eq 0) { T 'b.plan.store' } else { T 'b.plan.level' $compression }
+if ($outsideFolders.Count -gt 0) { $plan[(T 'f.not_included')] = @((($outsideFolders.Name) -join ', '), 'Warn') }
+
+# A FAT32 drive (most USB sticks) cannot hold a file of 4 GB or more: stop
+# now instead of failing after an hour of copying.
+$fileSystem = Get-FileSystemName -Path $Destination
+$maxFileBytes = Get-MaxFileBytes -FileSystem $fileSystem
+$tooBigForDrive = ($null -ne $maxFileBytes -and $sourceBytes -gt $maxFileBytes)
+if ($tooBigForDrive -and $compression -eq 0) {
+    throw (T 'b.error.file_limit' ([IO.Path]::GetPathRoot($Destination)) $fileSystem (Format-Size $sourceBytes) (Format-Size ($maxFileBytes + 1)))
+}
 
 # Restore kit: Migrator + portable tools next to the archive, for a new PC
 # that has neither PowerShell 7, nor 7-Zip, nor internet yet.
@@ -236,6 +278,15 @@ $askKit = $interactive -and -not $RestoreKit -and $kit.State -in @('Missing', 'N
 Write-SummaryBox -Title (T 'b.plan.title') -Fields $plan
 
 if ($lowSpace) { Write-Warn (T 'b.warn.low_space') }
+if ($tooBigForDrive) {
+    # With compression the archive may still fit; without it the run stopped above.
+    Write-Warn (T 'b.warn.file_limit' ([IO.Path]::GetPathRoot($Destination)) $fileSystem (Format-Size ($maxFileBytes + 1)))
+}
+if ($outsideFolders.Count -gt 0) {
+    Write-Warn (T 'b.warn.outside' $outsideFolders.Count)
+    foreach ($folder in $outsideFolders) { Write-Text ('      {0}  ->  {1}' -f $folder.Name, $folder.Path) }
+    Write-Hint (T 'b.hint.outside')
+}
 if ($runningBrowsers.Count -gt 0) {
     Write-Warn (T 'b.warn.browsers' (($runningBrowsers.ProcessName | Sort-Object -Unique) -join ', '))
     Write-Hint (T 'b.hint.browsers')
@@ -271,6 +322,9 @@ if ($interactive) {
 # 7. Archive
 # ---------------------------------------------------------------------------
 Write-Host ''
+if ($outsideFolders.Count -gt 0) {
+    Write-LogLine -Path $artifacts.Log -Message "Folders outside the profile (not in the archive): $(($outsideFolders | ForEach-Object { '{0} -> {1}' -f $_.Name, $_.Path }) -join '; ')"
+}
 Write-LogLine -Path $artifacts.Log -Message "Backup started: user=$userName mode=$Mode source=$sourcePath archive=$($artifacts.Archive) files=$($scan.Files) bytes=$sourceBytes excludedFolders=$($scan.ExcludedDirectories.Count)"
 
 $result = New-ProfileArchive -ArchiverPath $archiver -SourcePath $sourcePath -ArchivePath $artifacts.Archive `
@@ -358,6 +412,7 @@ Write-ManifestFile -Path $artifacts.Manifest -Data @{
     skippedFiles         = @($skippedFiles | Select-Object -First 200)
     excludedFolderCount  = $scan.ExcludedDirectories.Count
     excludedCloudFolders = @($excludedCloudFolders)
+    foldersOutsideProfile = @($outsideFolders | ForEach-Object { '{0} -> {1}' -f $_.Name, $_.Path })
     verify               = $verifyState
     verifyExitCode       = $verifyExit
     archiveSha256        = $archiveHash

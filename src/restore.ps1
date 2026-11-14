@@ -698,6 +698,7 @@ function Invoke-RobocopyRestore {
     try {
         while (-not $process.HasExited) {
             Start-Sleep -Milliseconds 500
+            [void](Reset-SleepTimer)   # the PC must not fall asleep half-way
 
             if (-not $reader -and (Test-Path -LiteralPath $LogPath -PathType Leaf)) {
                 try {

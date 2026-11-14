@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.2.4
+  Migrator  v2.3.0
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -215,7 +215,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 131 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 141 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

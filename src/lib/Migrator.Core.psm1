@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.2.4'
+        ToolVersion         = '2.3.0'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
@@ -372,6 +372,130 @@ function Get-FreeSpaceBytes {
     if (-not $root) { return $null }
     try { return [IO.DriveInfo]::new($root).AvailableFreeSpace } catch { return $null }
 }
+
+function Get-FileSystemName {
+    # "NTFS", "exFAT", "FAT32"... of the drive that holds -Path; $null for a
+    # network path or when the drive cannot be read.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    try {
+        $root = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path))
+        if (-not $root -or $root.StartsWith('\\')) { return $null }
+        return [string][IO.DriveInfo]::new($root).DriveFormat
+    } catch { return $null }
+}
+
+function Get-MaxFileBytes {
+    # The largest file a file system can hold, or $null when there is no
+    # limit that matters. Most USB sticks are sold formatted as FAT32, where
+    # a file cannot reach 4 GB - less than almost any profile archive.
+    [CmdletBinding()]
+    param([AllowEmptyString()][AllowNull()][string]$FileSystem)
+
+    switch -Regex ([string]$FileSystem) {
+        '^FAT32$'       { return 4GB - 1 }
+        '^FAT(12|16)?$' { return 2GB - 1 }
+        default         { return $null }
+    }
+}
+
+function Get-FoldersOutsideProfile {
+    # Personal folders that do not live inside the profile folder, so a backup
+    # of the profile does not contain them:
+    #   * known folders (Desktop, Documents, ...) moved to another place with
+    #     the "Location" tab of their properties - read from the user's
+    #     "User Shell Folders" registry key (only when that user's registry
+    #     is loaded: the current user, or a signed-in one);
+    #   * folders at the top of the profile that are junctions or symbolic
+    #     links leading outside it (the backup never follows links).
+    # -ShellFolders supplies the registry values directly (for tests).
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ProfilePath,
+        [string]$Sid,
+        [hashtable]$ShellFolders
+    )
+
+    $root = [IO.Path]::GetFullPath($ProfilePath).TrimEnd('\')
+    $found = [System.Collections.Generic.List[object]]::new()
+
+    $known = [ordered]@{
+        'Desktop'     = 'desktop'
+        'Personal'    = 'documents'
+        'My Pictures' = 'pictures'
+        'My Music'    = 'music'
+        'My Video'    = 'videos'
+        '{374DE290-123F-4565-9164-39C4925E467B}' = 'downloads'
+        'Favorites'   = 'favorites'
+    }
+
+    $values = $ShellFolders
+    if (-not $values -and $Sid) {
+        $values = @{}
+        try {
+            $key = Get-Item -LiteralPath "Registry::HKEY_USERS\$Sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -ErrorAction Stop
+            foreach ($name in $known.Keys) {
+                $raw = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                if ($raw) { $values[$name] = [string]$raw }
+            }
+        } catch { $values = @{} }   # registry of that user is not loaded
+    }
+
+    if ($values) {
+        foreach ($name in $known.Keys) {
+            if (-not $values.ContainsKey($name)) { continue }
+            $path = [string]$values[$name]
+            # %USERPROFILE% is the profile being backed up, not the user running Migrator.
+            $path = [regex]::Replace($path, '%USERPROFILE%', $root.Replace('$', '$$'), 'IgnoreCase')
+            $path = [Environment]::ExpandEnvironmentVariables($path).TrimEnd('\')
+            if (-not $path -or -not [IO.Path]::IsPathRooted($path)) { continue }
+            if (Test-PathWithin -Child $path -Parent $root) { continue }
+            $found.Add([pscustomobject]@{ Name = (T "folder.$($known[$name])"); Path = $path; Kind = 'Moved' })
+        }
+    }
+
+    try {
+        foreach ($entry in [IO.DirectoryInfo]::new($root).EnumerateDirectories()) {
+            if ($null -eq $entry.LinkTarget) { continue }
+            $real = $null
+            try {
+                $final = $entry.ResolveLinkTarget($true)
+                if ($final) { $real = $final.FullName.TrimEnd('\') }
+            } catch { }
+            if (-not $real -or (Test-PathWithin -Child $real -Parent $root)) { continue }
+            if ($found | Where-Object { $_.Path -eq $real }) { continue }
+            $found.Add([pscustomobject]@{ Name = $entry.Name; Path = $real; Kind = 'Link' })
+        }
+    } catch { }
+
+    return @($found)
+}
+
+function Reset-SleepTimer {
+    # Tells Windows the PC is busy, so it does not go to sleep in the middle
+    # of a backup or restore that runs for an hour with nobody at the
+    # keyboard. Each call restarts the idle countdown; it is called from the
+    # progress loops, at most once in 20 seconds. Returns $false when the
+    # call is not available (never fatal).
+    [CmdletBinding()]
+    param([switch]$Force)
+
+    $now = [DateTime]::UtcNow
+    if (-not $Force -and $script:SleepTimerReset -and ($now - $script:SleepTimerReset).TotalSeconds -lt 20) { return $true }
+    $script:SleepTimerReset = $now
+    try {
+        if (-not ('Migrator.NativePower' -as [type])) {
+            Add-Type -Namespace Migrator -Name NativePower -MemberDefinition `
+                '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags);'
+        }
+        # 1 = ES_SYSTEM_REQUIRED
+        return ([Migrator.NativePower]::SetThreadExecutionState([uint32]1) -ne 0)
+    } catch {
+        return $false
+    }
+}
+$script:SleepTimerReset = $null
 
 function Test-PathWithin {
     [CmdletBinding()]
@@ -936,6 +1060,10 @@ Export-ModuleMember -Alias 'T' -Function @(
     'Get-ProfileByPath'
     'Get-TargetVolumes'
     'Get-FreeSpaceBytes'
+    'Get-FileSystemName'
+    'Get-MaxFileBytes'
+    'Get-FoldersOutsideProfile'
+    'Reset-SleepTimer'
     'Test-PathWithin'
     'Resolve-RealPath'
     'Get-OutsideLinks'

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.3.0 — 2026-11-14
+
+Six situations a first-time user on an ordinary PC is likely to meet.
+
+### Added
+
+- **Folders that are not inside the profile are named before the backup.** Desktop, Documents, Pictures, Music, Videos, Downloads or Favorites moved to another disk (the *Location* tab), and folders at the top of the profile that are links leading outside it, are not part of the profile folder and therefore not part of the archive. Migrator now lists them in the plan, in the log and in the manifest (`foldersOutsideProfile`), so their absence is not discovered on the new PC. Moved known folders are detected for the current user and for users who are signed in.
+- **A FAT32 drive is recognised before the backup starts.** FAT32, the format of most USB sticks, cannot hold a file of 4 GB or more. Without compression the backup now stops at once with an explanation instead of failing after a long copy; with compression it warns.
+- **The PC does not go to sleep during a backup or restore.**
+
+### Changed
+
+- **The archive is written as `<name>.7z.partial` and renamed when 7-Zip has finished.** A run that was cut short (window closed, power lost) no longer leaves a file that looks like a backup. Leftover `.partial` files are reported at the next backup to the same folder, with an offer to delete them.
+- **Migrator unpacked inside the profile (Desktop, Downloads).** The first destination offered used to be the Migrator folder itself, which is inside the profile and ended in an error. Migrator now explains why that folder cannot be used and offers `<drive>:\MigratorBackups` instead.
+
+### Fixed
+
+- **`Migrator.bat` started from inside the ZIP archive** closed without a word. It now says that the archive has to be unpacked first.
+
 ## 2.2.4 — 2026-11-14
 
 ### Changed
