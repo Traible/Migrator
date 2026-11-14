@@ -11,7 +11,7 @@ Migrator — небольшой инструмент на PowerShell для пе
 восстанавливает их в ту же, другую или новую учётную запись.
 
 ```text
-  Migrator  v2.2.3
+  Migrator  v2.2.4
   ====================================================================
   Резервная копия и восстановление профиля пользователя Windows
 
@@ -60,7 +60,8 @@ Migrator — небольшой инструмент на PowerShell для пе
 1. Скачайте репозиторий (или архив релиза) и распакуйте, например, на внешний
    диск.
 2. Один раз запустите **`Get Tools.bat`**. Он найдёт PowerShell 7 и 7-Zip или
-   установит их через `winget`. `"Get Tools.bat" -Portable` кладёт переносные
+   предложит установить их через `winget`; ничего не ставится, пока вы не
+   введёте `y` для каждой программы. `"Get Tools.bat" -Portable` кладёт переносные
    копии в `Tools\`, и папка работает на любом компьютере с флешки.
 3. Запустите **`Migrator.bat`** и выберите «Создать копию профиля».
 4. На новом компьютере запустите `Migrator.bat` и выберите «Восстановить
@@ -220,7 +221,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 124 проверки, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 130 проверок, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 

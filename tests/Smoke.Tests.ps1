@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.2.3') 'Tool version is 2.2.3'
+Assert-True ([string]$config.ToolVersion -eq '2.2.4') 'Tool version is 2.2.4'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -166,6 +166,29 @@ try {
 } finally {
     Remove-Item -LiteralPath $staleDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+# Batch files: cmd.exe misreads labels and UTF-8 lines in a file with LF-only
+# line endings, so every .bat must use CRLF.
+$badEol = @(Get-ChildItem -LiteralPath $toolRoot -Filter '*.bat' -File | Where-Object {
+    $text = [IO.File]::ReadAllText($_.FullName)
+    ($text -replace "`r`n", '') -match "[`r`n]"
+} | ForEach-Object Name)
+Assert-True ($badEol.Count -eq 0) "Batch files use CRLF line endings$(if ($badEol) { ': ' + ($badEol -join ', ') })"
+
+# The launcher without PowerShell 7: nothing is installed unless "y" is typed.
+$env:MIGRATOR_TEST_NO_PWSH = '1'
+try {
+    $launcher = Join-Path $toolRoot 'Migrator.bat'
+    foreach ($case in @(@('', 'an empty answer'), @('n', '"n"'), @('ye"s & echo INJECTED', 'an unexpected answer'))) {
+        $out = @($case[0] | cmd.exe /c "`"$launcher`"" 2>&1 | ForEach-Object { [string]$_ })
+        $declined = [bool]($out -match 'Nothing was installed')
+        $started = [bool]($out -match 'required tools|INJECTED|is not recognized')
+        Assert-True ($LASTEXITCODE -eq 1 -and $declined -and -not $started) "Launcher installs nothing on $($case[1])"
+    }
+} finally {
+    Remove-Item Env:MIGRATOR_TEST_NO_PWSH -ErrorAction SilentlyContinue
+}
+$ruLocale = Import-PowerShellDataFile -LiteralPath (Join-Path $toolRoot 'src\locale\ru.psd1')
+Assert-True ($ruLocale['ui.yes_letter'] -eq 'y' -and $ruLocale['ui.no_letter'] -eq 'n') 'Russian interface asks y/n like the English one'
 Assert-True ((Format-RemainingTime -Seconds 20) -match 'less than a minute') 'Remaining time: under a minute'
 Assert-True ((Format-RemainingTime -Seconds 7300) -eq 'about 2 h 0 min left') 'Remaining time: hours are rounded to 5 minutes'
 

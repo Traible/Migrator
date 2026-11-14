@@ -41,9 +41,14 @@ function Write-Note([string]$Text) { Write-Host "  $Text" -ForegroundColor DarkG
 function Write-Bad([string]$Text)  { Write-Host "  [!]  $Text" -ForegroundColor Yellow }
 
 function Confirm-Action([string]$Question) {
+    # Nothing is downloaded or installed on an empty answer: the user has to
+    # type "y". -Yes is for callers that have already asked (the restore kit).
     if ($Yes) { return $true }
-    $answer = Read-Host "  $Question [Y/n]"
-    return ([string]::IsNullOrWhiteSpace($answer) -or $answer -match '^[YyДд]')
+    $answer = Read-Host "  $Question [y/N]"
+    # Also accepted: н, the letter the Y key gives in the Russian keyboard
+    # layout, and да ("da"). Written as escapes because Windows
+    # PowerShell 5.1 reads a script without a BOM in the ANSI code page.
+    return ([string]$answer).Trim() -match '^(y|yes|н|да)$'
 }
 
 function Find-SevenZip {
@@ -75,12 +80,20 @@ function Find-Pwsh {
 
 function Test-Winget { return [bool](Get-Command 'winget.exe' -ErrorAction SilentlyContinue) }
 
-function Install-WithWinget([string]$Id, [string]$Name) {
+function Install-WithWinget([string]$Id, [string]$Name, [string]$About) {
     if (-not (Test-Winget)) {
         Write-Bad "winget is not available on this PC."
         return $false
     }
-    if (-not (Confirm-Action "Install $Name with winget?")) { return $false }
+    Write-Bad "$Name is not installed."
+    Write-Note $About
+    Write-Note "winget (the Windows package manager) would download it and install it on this PC"
+    Write-Note "for all users; Windows asks for administrator rights. Installing it means"
+    Write-Note "accepting its license. It stays installed until you remove it in Windows Settings."
+    if (-not (Confirm-Action "Install $Name now?")) {
+        Write-Note "$Name was not installed."
+        return $false
+    }
     & winget.exe install --id $Id --exact --source winget --accept-package-agreements --accept-source-agreements
     return ($LASTEXITCODE -eq 0)
 }
@@ -158,7 +171,7 @@ Write-Step '7-Zip (creates and restores the archives)'
 $sevenZip = Find-SevenZip
 
 if (-not $sevenZip -and -not $CheckOnly) {
-    if (Install-WithWinget -Id '7zip.7zip' -Name '7-Zip') { $sevenZip = Find-SevenZip }
+    if (Install-WithWinget -Id '7zip.7zip' -Name '7-Zip' -About 'Free archiver by Igor Pavlov, GNU LGPL license, https://www.7-zip.org') { $sevenZip = Find-SevenZip }
 }
 
 if ($sevenZip) {
@@ -182,6 +195,8 @@ Write-Step 'PowerShell 7 (runs Migrator)'
 $pwsh = Find-Pwsh
 
 if ($Portable -and -not $CheckOnly -and -not (Test-Path -LiteralPath (Join-Path $pwshDir 'pwsh.exe'))) {
+    Write-Note "A portable PowerShell $PowerShellVersion (about 110 MB) can be downloaded from Microsoft's official"
+    Write-Note 'GitHub release into the Tools folder of Migrator. Nothing is installed in Windows.'
     if (Confirm-Action "Download portable PowerShell $PowerShellVersion into Tools\pwsh?") {
         try {
             if (Install-PortablePwsh) { $pwsh = Find-Pwsh }
@@ -190,7 +205,7 @@ if ($Portable -and -not $CheckOnly -and -not (Test-Path -LiteralPath (Join-Path 
         }
     }
 } elseif (-not $pwsh -and -not $CheckOnly) {
-    if (Install-WithWinget -Id 'Microsoft.PowerShell' -Name 'PowerShell 7') { $pwsh = Find-Pwsh }
+    if (Install-WithWinget -Id 'Microsoft.PowerShell' -Name 'PowerShell 7' -About 'Free shell by Microsoft, MIT license, https://aka.ms/powershell') { $pwsh = Find-Pwsh }
 }
 
 if ($pwsh) {

@@ -157,7 +157,10 @@ function Wait-Enter {
 }
 
 function Read-YesNo {
-    # Accepts y/n in English and the localized letters (д/н in Russian).
+    # The prompt shows y/n in every language. The words of the interface
+    # language are accepted too ("да" / "нет"), and so are the letters the
+    # Y and N keys give in the Russian keyboard layout ("н" and "т"): a
+    # forgotten layout switch must not turn a "yes" into something else.
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Prompt,
@@ -166,8 +169,8 @@ function Read-YesNo {
 
     $yes = (T 'ui.yes_letter'); $no = (T 'ui.no_letter')
     $suffix = if ($Default) { '[{0}/{1}]' -f $yes.ToUpper(), $no.ToLower() } else { '[{0}/{1}]' -f $yes.ToLower(), $no.ToUpper() }
-    $yesAnswers = @('y', 'yes', $yes.ToLower(), (T 'ui.yes').ToLower())
-    $noAnswers  = @('n', 'no', $no.ToLower(), (T 'ui.no').ToLower())
+    $yesAnswers = @('y', 'yes', 'н', $yes.ToLower(), (T 'ui.yes').ToLower())
+    $noAnswers  = @('n', 'no', 'т', $no.ToLower(), (T 'ui.no').ToLower())
 
     while ($true) {
         Write-Host ('  ' + $Prompt + ' ' + $suffix + ' ') -ForegroundColor $script:Theme.Accent -NoNewline

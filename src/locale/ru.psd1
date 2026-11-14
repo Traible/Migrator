@@ -14,8 +14,8 @@
 
     'ui.yes' = 'да'
     'ui.no'  = 'нет'
-    'ui.yes_letter' = 'д'
-    'ui.no_letter'  = 'н'
+    'ui.yes_letter' = 'y'
+    'ui.no_letter'  = 'n'
     'ui.cancel' = 'Отмена'
     'ui.press_enter' = 'Нажмите Enter, чтобы продолжить...'
     'ui.answer_yes_no' = 'Ответьте {0} или {1}.'

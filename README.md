@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.2.3
+  Migrator  v2.2.4
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -59,8 +59,9 @@ same, another or a brand-new account.
 
 1. Download the repository (or a release archive) and unpack it, for example
    to an external drive.
-2. Run **`Get Tools.bat`** once. It finds PowerShell 7 and 7-Zip or installs
-   them with `winget`. `"Get Tools.bat" -Portable` puts portable copies into
+2. Run **`Get Tools.bat`** once. It finds PowerShell 7 and 7-Zip or offers to
+   install them with `winget`; nothing is installed until you type `y` for each
+   program. `"Get Tools.bat" -Portable` puts portable copies into
    `Tools\`, so the folder works on any PC from a USB drive.
 3. Run **`Migrator.bat`** and choose *Back up a user profile*.
 4. On the new PC run `Migrator.bat` and choose *Restore a user profile*.
@@ -214,7 +215,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 124 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 130 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

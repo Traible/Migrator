@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.4 — 2026-11-14
+
+### Changed
+
+- **Nothing is installed without a typed "y".** On a PC without PowerShell 7, `Migrator.bat` used to install PowerShell 7 and 7-Zip when Enter was pressed at its question. It now says which programs are missing, who publishes them, that they are installed for all users with administrator rights, and continues only when `y` is typed; an empty or any other answer installs nothing. `Get-Tools.ps1` then asks about each program separately, again with "no" as the default.
+- **Yes/no questions are `y/n` in the Russian interface too** (they were `д/н`). The words "да" / "нет" are still accepted, and so are the letters the Y and N keys give in the Russian keyboard layout, so a forgotten layout switch does not change the answer.
+
+### Fixed
+
+- The batch files in the release archive had LF-only line endings, which `cmd.exe` can misread in files with labels and non-ASCII text. They now use CRLF, and a test checks it.
+
+### Tests
+
+- The launcher is run through its "no PowerShell 7" branch with an empty, a negative and an unexpected answer.
+
 ## 2.2.3 — 2026-11-11
 
 ### Security
