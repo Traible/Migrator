@@ -26,10 +26,21 @@ param(
     [switch]$Portable,
     [switch]$CheckOnly,
     [switch]$Yes,
+    # Only put a portable 7-Zip into Tools\7-Zip (used by Migrator itself).
+    [switch]$SevenZipOnly,
     [string]$PowerShellVersion = '7.6.10'
 )
 
 $ErrorActionPreference = 'Stop'
+
+# 7-Zip for the download without winget. The SHA256 values are the ones
+# published for this release (winget manifest and the GitHub release of the
+# author); update the version and both hashes together.
+$SevenZipVersion = '26.06'
+$SevenZipPackages = @{
+    x64 = @{ File = '7z2606-x64.msi'; Sha256 = '6DC822569E777D9A3ECD5FFCBC22B55600AF87E6C5D9810A64E8566CF5A4AF9F' }
+    x86 = @{ File = '7z2606.msi';     Sha256 = '1B3694F6F1449FB5EE98CBDAE5B3DCCE4A86E7F4929E8543DC28B89B55B89187' }
+}
 $root = $PSScriptRoot
 $toolsRoot = Join-Path $root 'Tools'
 $sevenZipDir = Join-Path $toolsRoot '7-Zip'
@@ -122,29 +133,94 @@ function Copy-PortableSevenZip([string]$InstalledExe) {
     return (Test-Path -LiteralPath (Join-Path $sevenZipDir '7z.exe'))
 }
 
-function Install-PortablePwsh {
+function Get-MachineArchitecture {
     # The architecture of Windows itself: a 32-bit process on 64-bit Windows
     # reports x86 in PROCESSOR_ARCHITECTURE and the real one in ...W6432.
     $machine = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-    $arch = switch ($machine) {
-        'ARM64' { 'arm64' }
-        'x86'   { 'x86' }
-        default { 'x64' }
+    switch ($machine) {
+        'ARM64' { return 'arm64' }
+        'x86'   { return 'x86' }
+        default { return 'x64' }
     }
+}
+
+function Get-WebFile([string]$Url, [string]$OutFile) {
+    # Downloads with curl.exe (part of Windows 10 1803 and later): it is fast
+    # and draws a progress bar. Invoke-WebRequest is the fallback; its own
+    # progress display makes Windows PowerShell 5.1 many times slower, so it
+    # is switched off there.
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    if (Get-Command 'curl.exe' -ErrorAction SilentlyContinue) {
+        $process = Start-Process -FilePath 'curl.exe' -NoNewWindow -PassThru -ArgumentList @(
+            '--location', '--fail', '--progress-bar', '--output', "`"$OutFile`"", $Url
+        )
+        $null = $process.Handle
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "Download failed (curl code $($process.ExitCode)): $Url" }
+    } else {
+        $previous = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try { Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing } finally { $ProgressPreference = $previous }
+    }
+    if (-not (Test-Path -LiteralPath $OutFile -PathType Leaf)) { throw "Download failed: $Url" }
+}
+
+function Install-PortableSevenZip {
+    # Puts 7z.exe, 7z.dll and License.txt into Tools\7-Zip without installing
+    # anything in Windows: the official MSI package is downloaded from the
+    # author's GitHub release, checked against the SHA256 pinned above and
+    # unpacked with "msiexec /a" (an administrative image: files only, no
+    # registry entries, no shortcuts, no entry in "Installed apps").
+    $arch = Get-MachineArchitecture
+    if ($arch -eq 'arm64') { $arch = 'x64' }   # no MSI for ARM64; Windows 11 on ARM runs the x64 build
+    $package = $SevenZipPackages[$arch]
+    $msiName = $package.File
+    $url = "https://github.com/ip7z/7zip/releases/download/$SevenZipVersion/$msiName"
+    $temp = Join-Path $env:TEMP ("migrator-7zip-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $temp | Out-Null
+
+    try {
+        $msiPath = Join-Path $temp $msiName
+        Write-Note "Downloading $msiName (about 2 MB) from $url"
+        Get-WebFile -Url $url -OutFile $msiPath
+
+        $actual = (Get-FileHash -LiteralPath $msiPath -Algorithm SHA256).Hash
+        if ($actual -ne $package.Sha256) { throw "SHA256 mismatch for $msiName (got $actual)" }
+        Write-Good "SHA256 matches the value published for 7-Zip $SevenZipVersion."
+
+        $image = Join-Path $temp 'image'
+        $process = Start-Process -FilePath 'msiexec.exe' -PassThru -ArgumentList @('/a', "`"$msiPath`"", '/qn', "TARGETDIR=`"$image`"")
+        $null = $process.Handle
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "msiexec could not unpack the package (code $($process.ExitCode))." }
+
+        $exe = Get-ChildItem -LiteralPath $image -Recurse -Filter '7z.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $exe) { throw '7z.exe was not found in the unpacked package.' }
+        New-Item -ItemType Directory -Force -Path $sevenZipDir | Out-Null
+        foreach ($name in @('7z.exe', '7z.dll', 'License.txt')) {
+            $source = Join-Path $exe.DirectoryName $name
+            if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $sevenZipDir -Force }
+        }
+        return (Test-Path -LiteralPath (Join-Path $sevenZipDir '7z.exe'))
+    } finally {
+        Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-PortablePwsh {
+    $arch = Get-MachineArchitecture
     $zipName = "PowerShell-$PowerShellVersion-win-$arch.zip"
     $base = "https://github.com/PowerShell/PowerShell/releases/download/v$PowerShellVersion"
     $temp = Join-Path $env:TEMP ("migrator-pwsh-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $temp | Out-Null
 
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        $ProgressPreference = 'SilentlyContinue'
         $zipPath = Join-Path $temp $zipName
         $hashPath = Join-Path $temp 'hashes.sha256'
 
-        Write-Note "Downloading $zipName (about 110 MB)..."
-        Invoke-WebRequest -Uri "$base/$zipName" -OutFile $zipPath -UseBasicParsing
-        Invoke-WebRequest -Uri "$base/hashes.sha256" -OutFile $hashPath -UseBasicParsing
+        Write-Note "Downloading $zipName (about 110 MB) from $base"
+        Get-WebFile -Url "$base/$zipName" -OutFile $zipPath
+        Get-WebFile -Url "$base/hashes.sha256" -OutFile $hashPath
 
         $expected = $null
         foreach ($line in Get-Content -LiteralPath $hashPath) {
@@ -184,8 +260,32 @@ Write-Host ('=' * 60) -ForegroundColor DarkCyan
 Write-Step '7-Zip (creates and restores the archives)'
 $sevenZip = Find-SevenZip
 
+function Request-PortableSevenZip {
+    # Without winget, or when the user did not want a system-wide install.
+    Write-Note "A portable 7-Zip $SevenZipVersion (about 2 MB) can be downloaded from the author's GitHub release"
+    Write-Note 'into the Tools folder of Migrator. Nothing is installed in Windows.'
+    if (-not (Confirm-Action "Download portable 7-Zip into Tools\7-Zip?")) { return $false }
+    try {
+        return [bool](Install-PortableSevenZip)
+    } catch {
+        Write-Bad "Portable 7-Zip was not installed: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+if ($SevenZipOnly) {
+    if (Find-SevenZip) { exit 0 }
+    if (Request-PortableSevenZip) { Write-Good "Found: $(Find-SevenZip)"; exit 0 }
+    exit 1
+}
+
 if (-not $sevenZip -and -not $CheckOnly) {
-    if (Install-WithWinget -Id '7zip.7zip' -Name '7-Zip' -About 'Free archiver by Igor Pavlov, GNU LGPL license, https://www.7-zip.org') { $sevenZip = Find-SevenZip }
+    if (Test-Winget) {
+        if (Install-WithWinget -Id '7zip.7zip' -Name '7-Zip' -About 'Free archiver by Igor Pavlov, GNU LGPL license, https://www.7-zip.org') { $sevenZip = Find-SevenZip }
+    } else {
+        Write-Bad '7-Zip is not installed, and winget (the Windows package manager) is not available on this PC.'
+    }
+    if (-not $sevenZip -and (Request-PortableSevenZip)) { $sevenZip = Find-SevenZip }
 }
 
 if ($sevenZip) {
@@ -219,7 +319,22 @@ if ($Portable -and -not $CheckOnly -and -not (Test-Path -LiteralPath (Join-Path 
         }
     }
 } elseif (-not $pwsh -and -not $CheckOnly) {
-    if (Install-WithWinget -Id 'Microsoft.PowerShell' -Name 'PowerShell 7' -About 'Free shell by Microsoft, MIT license, https://aka.ms/powershell') { $pwsh = Find-Pwsh }
+    if (Test-Winget) {
+        if (Install-WithWinget -Id 'Microsoft.PowerShell' -Name 'PowerShell 7' -About 'Free shell by Microsoft, MIT license, https://aka.ms/powershell') { $pwsh = Find-Pwsh }
+    } else {
+        Write-Bad 'PowerShell 7 is not installed, and winget (the Windows package manager) is not available on this PC.'
+    }
+    if (-not $pwsh) {
+        Write-Note "A portable PowerShell $PowerShellVersion (about 110 MB) can be downloaded from Microsoft's official"
+        Write-Note 'GitHub release into the Tools folder of Migrator. Nothing is installed in Windows.'
+        if (Confirm-Action "Download portable PowerShell $PowerShellVersion into Tools\pwsh?") {
+            try {
+                if (Install-PortablePwsh) { $pwsh = Find-Pwsh }
+            } catch {
+                Write-Bad "Portable PowerShell was not installed: $($_.Exception.Message)"
+            }
+        }
+    }
 }
 
 if ($pwsh) {

@@ -176,33 +176,50 @@ function Request-Archiver {
 
     Write-Host ''
     Write-Warn (T 'tools.7zip.missing')
-    if (-not (Get-Command 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue)) {
-        Write-Hint (T 'tools.no_winget')
-        Write-Hint (T 'm.tools.get_tools')
-        return $null
-    }
     Write-Hint (T 'tools.7zip.about')
-    Write-Hint (T 'tools.install.how')
-    if (-not (Read-YesNo (T 'tools.7zip.ask') $false)) { return $null }
 
-    Write-Hint (T 'tools.install.progress' '7-Zip')
-    # A separate process attached to this console: winget draws its own
-    # progress bar, and its output does not become this function's result.
-    $process = Start-Process -FilePath 'winget.exe' -NoNewWindow -PassThru -ArgumentList @(
-        'install', '--id', '7zip.7zip', '--exact', '--source', 'winget',
-        '--accept-package-agreements', '--accept-source-agreements'
-    )
-    $process.WaitForExit()
-    Write-Host ''
-
-    $archiver = Get-ArchiverPath
-    if ($archiver) {
-        Write-Ok (T 'tools.7zip.installed' $archiver)
+    # 1. Install in Windows with winget, when this PC has it.
+    if (Get-Command 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue) {
+        Write-Hint (T 'tools.install.how')
+        if (Read-YesNo (T 'tools.7zip.ask') $false) {
+            Write-Hint (T 'tools.install.progress' '7-Zip')
+            # A separate process attached to this console: winget draws its own
+            # progress bar, and its output does not become this function's result.
+            $process = Start-Process -FilePath 'winget.exe' -NoNewWindow -PassThru -ArgumentList @(
+                'install', '--id', '7zip.7zip', '--exact', '--source', 'winget',
+                '--accept-package-agreements', '--accept-source-agreements'
+            )
+            $process.WaitForExit()
+            Write-Host ''
+            $archiver = Get-ArchiverPath
+            if ($archiver) {
+                Write-Ok (T 'tools.7zip.installed' $archiver)
+                return $archiver
+            }
+            Write-Err (T 'tools.install.failed' $process.ExitCode)
+        }
     } else {
-        Write-Err (T 'tools.install.failed' $process.ExitCode)
-        Write-Hint (T 'm.tools.get_tools')
+        Write-Hint (T 'tools.no_winget')
     }
-    return $archiver
+
+    # 2. A portable copy in the Migrator folder: no winget and no
+    #    administrator rights needed, nothing is installed in Windows.
+    #    Get-Tools.ps1 downloads the official package and checks its SHA256.
+    $getTools = Join-Path (Get-MigratorRoot) 'Get-Tools.ps1'
+    if (Test-Path -LiteralPath $getTools -PathType Leaf) {
+        Write-Hint (T 'tools.7zip.portable_about')
+        if (Read-YesNo (T 'tools.7zip.ask_portable') $false) {
+            & (Get-Process -Id $PID).Path -NoLogo -NoProfile -ExecutionPolicy Bypass -File $getTools -SevenZipOnly -Yes | Out-Host
+            $archiver = Get-ArchiverPath
+            if ($archiver) {
+                Write-Ok (T 'tools.7zip.installed' $archiver)
+                return $archiver
+            }
+        }
+    }
+
+    Write-Hint (T 'm.tools.get_tools')
+    return $null
 }
 
 Export-ModuleMember -Function @(

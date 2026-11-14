@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.3.0') 'Tool version is 2.3.0'
+Assert-True ([string]$config.ToolVersion -eq '2.3.1') 'Tool version is 2.3.1'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -176,7 +176,17 @@ Assert-True ($badEol.Count -eq 0) "Batch files use CRLF line endings$(if ($badEo
 
 # The launcher without PowerShell 7: nothing is installed unless "y" is typed.
 $env:MIGRATOR_TEST_NO_PWSH = '1'
+$env:MIGRATOR_LANG = 'en'
 try {
+    # One language at a time: Russian text on an English Windows with the
+    # classic console is shown as question marks.
+    $enText = @('' | cmd.exe /c "`"$(Join-Path $toolRoot 'Migrator.bat')`"" 2>&1 | ForEach-Object { [string]$_ })
+    $env:MIGRATOR_LANG = 'ru'
+    $ruText = @('' | cmd.exe /c "`"$(Join-Path $toolRoot 'Migrator.bat')`"" 2>&1 | ForEach-Object { [string]$_ })
+    $env:MIGRATOR_LANG = 'en'
+    Assert-True ([bool]($enText -match 'was not found') -and -not [bool]($enText -match '[а-яА-Я]')) 'Launcher in English shows no Russian text'
+    Assert-True ([bool]($ruText -match 'не найден') -and [bool]($ruText -match 'Ничего не установлено') -and -not [bool]($ruText -match 'was not found')) 'Launcher in Russian shows Russian text only'
+
     $launcher = Join-Path $toolRoot 'Migrator.bat'
     foreach ($case in @(@('', 'an empty answer'), @('n', '"n"'), @('ye"s & echo INJECTED', 'an unexpected answer'))) {
         $out = @($case[0] | cmd.exe /c "`"$launcher`"" 2>&1 | ForEach-Object { [string]$_ })
@@ -187,6 +197,14 @@ try {
 } finally {
     Remove-Item Env:MIGRATOR_TEST_NO_PWSH -ErrorAction SilentlyContinue
 }
+# Download without winget: the pinned 7-Zip package must be consistent.
+$getToolsText = [IO.File]::ReadAllText((Join-Path $toolRoot 'Get-Tools.ps1'))
+$pinVersion = if ($getToolsText -match "\`$SevenZipVersion = '(\d+)\.(\d+)'") { $Matches[1] + $Matches[2] } else { '' }
+$pins = [regex]::Matches($getToolsText, "File = '(7z(\d+)[^']*\.msi)';\s*Sha256 = '([0-9A-Fa-f]+)'")
+Assert-True ($pinVersion -and $pins.Count -eq 2 -and @($pins | Where-Object { $_.Groups[2].Value -ne $pinVersion -or $_.Groups[3].Value.Length -ne 64 }).Count -eq 0) 'Pinned 7-Zip packages match the pinned version and carry full SHA256 values'
+$sevenZipOnly = @('' | powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $toolRoot 'Get-Tools.ps1') -SevenZipOnly 2>&1 | ForEach-Object { [string]$_ })
+Assert-True ($LASTEXITCODE -eq 0 -and -not [bool]($sevenZipOnly -match 'Download')) 'Get-Tools -SevenZipOnly does nothing when 7-Zip is already there'
+
 # Started from inside the ZIP: only the .bat is there, without its files.
 $loneDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $loneDir | Out-Null

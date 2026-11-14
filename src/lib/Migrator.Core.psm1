@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.3.0'
+        ToolVersion         = '2.3.1'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
