@@ -94,8 +94,22 @@ function Install-WithWinget([string]$Id, [string]$Name, [string]$About) {
         Write-Note "$Name was not installed."
         return $false
     }
-    & winget.exe install --id $Id --exact --source winget --accept-package-agreements --accept-source-agreements
-    return ($LASTEXITCODE -eq 0)
+    Write-Note "Downloading and installing $Name. This can take a few minutes; winget shows its progress below."
+    # winget is started as a separate process attached to this console, so its
+    # own progress bar is visible. Called with "&" inside this function, its
+    # output would be collected as the function's return value and never shown.
+    $process = Start-Process -FilePath 'winget.exe' -NoNewWindow -PassThru -ArgumentList @(
+        'install', '--id', $Id, '--exact', '--source', 'winget',
+        '--accept-package-agreements', '--accept-source-agreements'
+    )
+    $null = $process.Handle   # keeps the exit code readable in Windows PowerShell 5.1
+    $process.WaitForExit()
+    Write-Host ''
+    if ($process.ExitCode -ne 0) {
+        Write-Bad "winget finished with code $($process.ExitCode); $Name may not be installed."
+        return $false
+    }
+    return $true
 }
 
 function Copy-PortableSevenZip([string]$InstalledExe) {

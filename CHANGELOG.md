@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **The installation of PowerShell 7 and 7-Zip shows its progress.** The output of winget was collected instead of shown, so the screen stayed unchanged for minutes while a program was downloaded and installed, and a failed installation was treated as a success. winget now writes to the console itself, with its own progress bar, and its exit code is checked.
 - The batch files in the release archive had LF-only line endings, which `cmd.exe` can misread in files with labels and non-ASCII text. They now use CRLF, and a test checks it.
 
 ### Tests
