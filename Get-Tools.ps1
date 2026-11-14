@@ -210,6 +210,15 @@ function Expand-MsiFile([string]$MsiPath, [string]$Destination, [string[]]$Names
     # Format 1: every byte comes back as one character (0..255).
     $text = [string](Invoke-ComMember $record 'ReadStream' 'InvokeMethod' @(1, $size, 1))
     $bytes = [Text.Encoding]::GetEncoding(28591).GetBytes($text)
+
+    # Let go of the package: while these objects are alive the .msi stays
+    # open and the temporary folder cannot be deleted afterwards.
+    foreach ($object in @($record, $view, $database, $installer)) {
+        if ($object) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($object) } catch { } }
+    }
+    $record = $null; $view = $null; $database = $null; $installer = $null
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+
     if ($bytes.Length -ne $size) { throw "the cabinet was read incompletely ($($bytes.Length) of $size bytes)" }
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
