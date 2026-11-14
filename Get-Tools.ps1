@@ -165,12 +165,76 @@ function Get-WebFile([string]$Url, [string]$OutFile) {
     if (-not (Test-Path -LiteralPath $OutFile -PathType Leaf)) { throw "Download failed: $Url" }
 }
 
+function Invoke-ComMember($Object, [string]$Name, [string]$Kind, [object[]]$Arguments) {
+    # The Windows Installer automation objects expose no type information to
+    # PowerShell, so their members are called by name.
+    return $Object.GetType().InvokeMember($Name, [Reflection.BindingFlags]$Kind, $null, $Object, $Arguments)
+}
+
+function Expand-MsiFile([string]$MsiPath, [string]$Destination, [string[]]$Names) {
+    # Takes the named files out of an MSI package without installing it and
+    # without msiexec: the package database is read through the built-in
+    # "WindowsInstaller.Installer" object, the cabinet stored inside it is
+    # saved and unpacked with expand.exe (part of Windows).
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = Invoke-ComMember $installer 'OpenDatabase' 'InvokeMethod' @($MsiPath, 0)
+    $query = {
+        param($sql)
+        $opened = Invoke-ComMember $database 'OpenView' 'InvokeMethod' @($sql)
+        [void](Invoke-ComMember $opened 'Execute' 'InvokeMethod' $null)
+        return $opened
+    }
+
+    # File table: key inside the cabinet -> real file name ("short|long").
+    $keys = @{}
+    $view = & $query 'SELECT `File`, `FileName` FROM `File`'
+    while ($record = Invoke-ComMember $view 'Fetch' 'InvokeMethod' $null) {
+        $key = [string](Invoke-ComMember $record 'StringData' 'GetProperty' @(1))
+        $name = ([string](Invoke-ComMember $record 'StringData' 'GetProperty' @(2)) -split '\|')[-1]
+        if ($Names -contains $name) { $keys[$key] = $name }
+    }
+
+    # The cabinet stored inside the package ("#name" in the Media table).
+    $cabinet = $null
+    $view = & $query 'SELECT `Cabinet` FROM `Media`'
+    while ($record = Invoke-ComMember $view 'Fetch' 'InvokeMethod' $null) {
+        $value = [string](Invoke-ComMember $record 'StringData' 'GetProperty' @(1))
+        if ($value.StartsWith('#')) { $cabinet = $value.Substring(1) }
+    }
+    if (-not $cabinet) { throw 'the package has no embedded cabinet' }
+
+    $view = & $query ("SELECT ``Data`` FROM ``_Streams`` WHERE ``Name`` = '$cabinet'")
+    $record = Invoke-ComMember $view 'Fetch' 'InvokeMethod' $null
+    if (-not $record) { throw "cabinet stream '$cabinet' was not found" }
+    $size = [int](Invoke-ComMember $record 'DataSize' 'GetProperty' @(1))
+    # Format 1: every byte comes back as one character (0..255).
+    $text = [string](Invoke-ComMember $record 'ReadStream' 'InvokeMethod' @(1, $size, 1))
+    $bytes = [Text.Encoding]::GetEncoding(28591).GetBytes($text)
+    if ($bytes.Length -ne $size) { throw "the cabinet was read incompletely ($($bytes.Length) of $size bytes)" }
+
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    $cabPath = Join-Path $Destination 'package.cab'
+    [IO.File]::WriteAllBytes($cabPath, $bytes)
+    $raw = Join-Path $Destination 'raw'
+    New-Item -ItemType Directory -Force -Path $raw | Out-Null
+    $null = & expand.exe $cabPath '-F:*' $raw
+    if ($LASTEXITCODE -ne 0) { throw "expand.exe could not unpack the cabinet (code $LASTEXITCODE)" }
+
+    foreach ($key in $keys.Keys) {
+        $source = Join-Path $raw $key
+        if (Test-Path -LiteralPath $source) { Move-Item -LiteralPath $source -Destination (Join-Path $Destination $keys[$key]) -Force }
+    }
+    Remove-Item -LiteralPath $raw -Recurse -Force
+    Remove-Item -LiteralPath $cabPath -Force
+    return @($Names | Where-Object { Test-Path -LiteralPath (Join-Path $Destination $_) })
+}
+
 function Install-PortableSevenZip {
     # Puts 7z.exe, 7z.dll and License.txt into Tools\7-Zip without installing
     # anything in Windows: the official MSI package is downloaded from the
-    # author's GitHub release, checked against the SHA256 pinned above and
-    # unpacked with "msiexec /a" (an administrative image: files only, no
-    # registry entries, no shortcuts, no entry in "Installed apps").
+    # author's GitHub release, checked against the SHA256 pinned above, and
+    # the three files are taken out of it (no registry entries, no shortcuts,
+    # no entry in "Installed apps").
     $arch = Get-MachineArchitecture
     if ($arch -eq 'arm64') { $arch = 'x64' }   # no MSI for ARM64; Windows 11 on ARM runs the x64 build
     $package = $SevenZipPackages[$arch]
@@ -188,19 +252,32 @@ function Install-PortableSevenZip {
         if ($actual -ne $package.Sha256) { throw "SHA256 mismatch for $msiName (got $actual)" }
         Write-Good "SHA256 matches the value published for 7-Zip $SevenZipVersion."
 
-        $image = Join-Path $temp 'image'
-        $process = Start-Process -FilePath 'msiexec.exe' -PassThru -ArgumentList @('/a', "`"$msiPath`"", '/qn', "TARGETDIR=`"$image`"")
-        $null = $process.Handle
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) { throw "msiexec could not unpack the package (code $($process.ExitCode))." }
+        $wanted = @('7z.exe', '7z.dll', 'License.txt')
+        $unpacked = Join-Path $temp 'files'
+        try {
+            # The files are read straight out of the package. msiexec is not
+            # used: in Windows Sandbox it takes many minutes even for 2 MB.
+            [void](Expand-MsiFile -MsiPath $msiPath -Destination $unpacked -Names $wanted)
+        } catch {
+            Write-Note "Reading the package directly failed ($($_.Exception.Message))."
+            Write-Note 'Unpacking it with Windows Installer instead; this can take several minutes.'
+            $image = Join-Path $temp 'image'
+            $process = Start-Process -FilePath 'msiexec.exe' -PassThru -ArgumentList @('/a', "`"$msiPath`"", '/qn', "TARGETDIR=`"$image`"")
+            $null = $process.Handle
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0) { throw "msiexec could not unpack the package (code $($process.ExitCode))." }
+            $exe = Get-ChildItem -LiteralPath $image -Recurse -Filter '7z.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $exe) { throw '7z.exe was not found in the unpacked package.' }
+            $unpacked = $exe.DirectoryName
+        }
 
-        $exe = Get-ChildItem -LiteralPath $image -Recurse -Filter '7z.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $exe) { throw '7z.exe was not found in the unpacked package.' }
+        if (-not (Test-Path -LiteralPath (Join-Path $unpacked '7z.exe'))) { throw '7z.exe was not found in the package.' }
         New-Item -ItemType Directory -Force -Path $sevenZipDir | Out-Null
-        foreach ($name in @('7z.exe', '7z.dll', 'License.txt')) {
-            $source = Join-Path $exe.DirectoryName $name
+        foreach ($name in $wanted) {
+            $source = Join-Path $unpacked $name
             if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $sevenZipDir -Force }
         }
+        Write-Good "Portable 7-Zip is in $sevenZipDir"
         return (Test-Path -LiteralPath (Join-Path $sevenZipDir '7z.exe'))
     } finally {
         Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue

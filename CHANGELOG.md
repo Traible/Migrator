@@ -7,7 +7,7 @@ Found by running the release in Windows Sandbox, a clean Windows without winget.
 ### Added
 
 - **PowerShell 7 and 7-Zip can be downloaded without winget.** When winget is missing (Windows Sandbox, LTSC, a freshly installed system) or its installation is declined, `Get-Tools.ps1` offers portable copies in the `Tools` folder of Migrator: nothing is installed in Windows and no administrator rights are needed.
-  - 7-Zip: the official MSI package from the author's GitHub release, checked against a SHA256 pinned in the script and unpacked with `msiexec /a` (files only, no installation).
+  - 7-Zip: the official MSI package from the author's GitHub release, checked against a SHA256 pinned in the script; `7z.exe`, `7z.dll` and `License.txt` are read straight out of the package (no installation and no `msiexec`, which takes many minutes in Windows Sandbox).
   - PowerShell: the official ZIP, checked against the release's hash list and Microsoft's signature, as before.
   - Downloads use `curl.exe` and show a progress bar.
 - The same offer for a missing 7-Zip inside Migrator (backup, restore, *Check required tools*).
