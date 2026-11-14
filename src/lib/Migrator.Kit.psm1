@@ -163,7 +163,50 @@ function New-RestoreKit {
     }
 }
 
+function Request-Archiver {
+    # Returns the path of 7-Zip, or $null. When 7-Zip is missing and the run
+    # is interactive, explains what would be installed and offers to install
+    # it with winget right here, so the user does not have to leave Migrator
+    # and start "Get Tools.bat". Nothing is installed without a typed "y".
+    [CmdletBinding()]
+    param([switch]$Interactive)
+
+    $archiver = Get-ArchiverPath
+    if ($archiver -or -not $Interactive -or -not (Test-InteractiveConsole)) { return $archiver }
+
+    Write-Host ''
+    Write-Warn (T 'tools.7zip.missing')
+    if (-not (Get-Command 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue)) {
+        Write-Hint (T 'tools.no_winget')
+        Write-Hint (T 'm.tools.get_tools')
+        return $null
+    }
+    Write-Hint (T 'tools.7zip.about')
+    Write-Hint (T 'tools.install.how')
+    if (-not (Read-YesNo (T 'tools.7zip.ask') $false)) { return $null }
+
+    Write-Hint (T 'tools.install.progress' '7-Zip')
+    # A separate process attached to this console: winget draws its own
+    # progress bar, and its output does not become this function's result.
+    $process = Start-Process -FilePath 'winget.exe' -NoNewWindow -PassThru -ArgumentList @(
+        'install', '--id', '7zip.7zip', '--exact', '--source', 'winget',
+        '--accept-package-agreements', '--accept-source-agreements'
+    )
+    $process.WaitForExit()
+    Write-Host ''
+
+    $archiver = Get-ArchiverPath
+    if ($archiver) {
+        Write-Ok (T 'tools.7zip.installed' $archiver)
+    } else {
+        Write-Err (T 'tools.install.failed' $process.ExitCode)
+        Write-Hint (T 'm.tools.get_tools')
+    }
+    return $archiver
+}
+
 Export-ModuleMember -Function @(
+    'Request-Archiver'
     'Get-RestoreKitPath'
     'Test-RestoreKit'
     'New-RestoreKit'

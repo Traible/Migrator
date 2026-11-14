@@ -5,6 +5,7 @@
 ### Changed
 
 - **Nothing is installed without a typed "y".** On a PC without PowerShell 7, `Migrator.bat` used to install PowerShell 7 and 7-Zip when Enter was pressed at its question. It now says which programs are missing, who publishes them, that they are installed for all users with administrator rights, and continues only when `y` is typed; an empty or any other answer installs nothing. `Get-Tools.ps1` then asks about each program separately, again with "no" as the default.
+- **A missing 7-Zip can be installed from inside Migrator.** When 7-Zip is not found, the backup, the restore and *Check required tools* explain what it is and offer to install it with winget right there (default answer: no), then carry on. Before, Migrator stopped and sent the user to `Get Tools.bat`.
 - **Yes/no questions are `y/n` in the Russian interface too** (they were `д/н`). The words "да" / "нет" are still accepted, and so are the letters the Y and N keys give in the Russian keyboard layout, so a forgotten layout switch does not change the answer.
 
 ### Fixed

@@ -26,7 +26,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
 }
 
 $config = Get-MigratorConfig
-$archiver = Get-ArchiverPath
+$archiver = Request-Archiver -Interactive:(-not $NonInteractive)
 if (-not $archiver) { throw (T 'error.archiver_not_found') }
 
 $isAdmin = Test-IsAdmin

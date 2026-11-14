@@ -481,7 +481,7 @@ function Test-TargetReady {
 # Restore from an archive
 # ---------------------------------------------------------------------------
 function Invoke-ArchiveRestoreFlow {
-    $archiver = Get-ArchiverPath
+    $archiver = Request-Archiver -Interactive:$interactive
     if (-not $archiver) { throw (T 'error.archiver_not_found') }
 
     Write-Section (T 'r.archive.section')

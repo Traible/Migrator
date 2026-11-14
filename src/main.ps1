@@ -40,10 +40,17 @@ function Show-ToolStatus {
     Write-Fields -Fields $fields
     Write-Host ''
     if (-not $archiver) {
-        Write-Warn (T 'm.tools.how_to_get')
-        Write-Hint (T 'm.tools.get_tools')
-        Wait-Enter
-        return
+        # Offers to install 7-Zip here; without a console it only explains.
+        $archiver = Request-Archiver -Interactive
+        if (-not $archiver) {
+            if (-not (Test-InteractiveConsole)) {
+                Write-Warn (T 'm.tools.how_to_get')
+                Write-Hint (T 'm.tools.get_tools')
+            }
+            Wait-Enter
+            return
+        }
+        Write-Host ''
     }
     Write-Ok (T 'm.tools.ready')
 

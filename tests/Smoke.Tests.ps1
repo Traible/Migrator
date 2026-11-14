@@ -263,6 +263,7 @@ Assert-True ((Get-ArchiveOutcome -ExitCode 2 -Issues $notArchive) -eq 'Failed') 
 
 $archiver = Get-ArchiverPath
 Assert-True (-not [string]::IsNullOrWhiteSpace($archiver)) "7-Zip is available: $archiver"
+Assert-True ((Request-Archiver -Interactive) -eq $archiver -and (Request-Archiver) -eq $archiver) 'An installed 7-Zip is used without any question'
 
 # ---------------------------------------------------------------------------
 # 5. Backup + restore integration
