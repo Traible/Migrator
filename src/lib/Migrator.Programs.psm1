@@ -397,22 +397,45 @@ function Invoke-ProgramUpdate {
         Write-Warn (T 'u.other_title' $other.Count)
         foreach ($item in $other) { Write-Hint ('     ' + (& $describe $item)) }
     }
+    Write-Host ''
+    Write-Hint (T 'u.source_note')
     if ($ListOnly) { return $true }
 
     $picked = @()
     if ($Interactive) {
         $choice = $Scope
+        $isAdmin = Test-IsAdmin
         if (-not $choice) {
+            if (-not $isAdmin) {
+                # Without administrator rights Windows asks for permission
+                # again for every program installed for all users.
+                Write-Host ''
+                Write-Warn (T 'u.admin_hint')
+                Write-Solution (T 'u.admin_solution')
+            }
             $items = [System.Collections.Generic.List[object]]::new()
             if ($recommended.Count -gt 0) {
                 $items.Add((New-MenuItem -Value 'Recommended' -Label (T 'u.menu.recommended' $recommended.Count) -Hint (T 'u.menu.recommended.hint')))
             }
             $items.Add((New-MenuItem -Value 'Choose' -Label (T 'u.menu.choose') -Hint (T 'u.menu.choose.hint')))
             $items.Add((New-MenuItem -Value 'All' -Label (T 'u.menu.all' $upgrades.Count) -Hint (T 'u.menu.all.hint')))
+            if (-not $isAdmin) { $items.Add((New-MenuItem -Value 'Admin' -Label (T 'm.menu.admin') -Key 'A')) }
             $items.Add((New-MenuItem -Value 'Cancel' -Label (T 'ui.cancel') -Key 'Q'))
             $choice = Show-Menu -Title (T 'u.menu.title') -Items @($items) -AllowCancel
         }
         switch ($choice) {
+            'Admin' {
+                # This screen again, in a new window with administrator rights.
+                $script = Join-Path (Get-MigratorRoot) 'src\update.ps1'
+                $launchArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script)
+                try {
+                    Start-Process -FilePath (Get-Process -Id $PID).Path -Verb RunAs -ArgumentList (ConvertTo-NativeCommandLine -Arguments $launchArgs)
+                    Write-Hint (T 'm.admin.restarting')
+                } catch {
+                    Write-Warn (T 'u.admin_declined')
+                }
+                return $true
+            }
             'Recommended' { $picked = @($recommended.Id) }
             'All'         { $picked = @($upgrades.Id) }
             'Choose' {
@@ -425,7 +448,6 @@ function Invoke-ProgramUpdate {
         }
         if ($picked.Count -eq 0) { Write-Hint (T 'u.nothing'); return $true }
         Write-Host ''
-        if (-not (Test-IsAdmin)) { Write-Hint (T 'u.admin_hint') }
         if (-not (Read-YesNo (T 'u.confirm' $picked.Count) $false)) { Write-Hint (T 'u.nothing'); return $true }
     } else {
         $picked = if ($Scope -eq 'All') { @($upgrades.Id) } elseif ($Scope -eq 'Recommended') { @($recommended.Id) } else { @() }

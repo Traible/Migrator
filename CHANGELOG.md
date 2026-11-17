@@ -9,6 +9,7 @@
   - *Choose from the list*: check marks, the recommended ones ticked;
   - *Everything*.
   Nothing is updated without a typed `y`; programs are updated one by one and the ones that failed are named at the end. The recommended set is the `UpdateRecommended` setting. Unattended: `update.ps1 -Scope Recommended|All -NonInteractive`; `-ListOnly` only shows the list. Drivers are not touched.
+  Without administrator rights Windows asks for permission again for almost every program, so the screen says so and offers *Restart as Administrator* right there. It also names the source: the winget catalog kept by Microsoft, with every installer checked against the catalog hash.
 
 ## 2.4.0 — 2026-11-17
 
