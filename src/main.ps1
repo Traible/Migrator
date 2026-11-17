@@ -15,7 +15,7 @@ if ($Language) { $env:MIGRATOR_LANG = $Language }
 $toolRoot = Split-Path -Parent $PSScriptRoot
 
 function Import-MigratorModules {
-    foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
+    foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
         Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force -Global
     }
 }
@@ -45,7 +45,7 @@ function Show-ToolStatus {
         if (-not $archiver) {
             if (-not (Test-InteractiveConsole)) {
                 Write-Warn (T 'm.tools.how_to_get')
-                Write-Hint (T 'm.tools.get_tools')
+                Write-Solution (T 'm.tools.get_tools')
             }
             Wait-Enter
             return

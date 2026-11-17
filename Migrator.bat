@@ -15,6 +15,7 @@ REM ============================================================
 
 set "BASE=%~dp0"
 call :DETECT_LANGUAGE
+call :SETUP_COLORS
 
 REM Started from inside the ZIP (Explorer unpacks only this file to a
 REM temporary folder) or from an incomplete copy: say so instead of closing.
@@ -47,10 +48,10 @@ call :FIND_PWSH
 if defined PWSH goto :RUN
 
 echo.
-if defined RU echo  PowerShell 7 по-прежнему не найден. Установите его с https://aka.ms/powershell
-if defined RU echo  и запустите Migrator.bat снова.
-if not defined RU echo  PowerShell 7 is still missing. Install it from https://aka.ms/powershell
-if not defined RU echo  and start Migrator.bat again.
+if defined RU echo  %C_WARN%[!]  PowerShell 7 по-прежнему не найден.%C_OFF%
+if defined RU echo  %C_OK%-^>   Установите его с https://aka.ms/powershell и запустите Migrator.bat снова.%C_OFF%
+if not defined RU echo  %C_WARN%[!]  PowerShell 7 is still missing.%C_OFF%
+if not defined RU echo  %C_OK%-^>   Install it from https://aka.ms/powershell and start Migrator.bat again.%C_OFF%
 echo.
 pause
 exit /b 1
@@ -98,64 +99,82 @@ set "RU=1"
 chcp 65001 >nul
 exit /b 0
 
+:SETUP_COLORS
+REM Problems are shown in orange, the way out in green. Escape sequences
+REM work in the console of Windows 10 1511 and later; older systems and
+REM NO_COLOR get plain text.
+set "C_WARN="
+set "C_OK="
+set "C_OFF="
+if defined NO_COLOR exit /b 0
+set "WINBUILD="
+for /f "tokens=2 delims=[]" %%V in ('ver') do for /f "tokens=4 delims=. " %%B in ("%%V") do set "WINBUILD=%%B"
+if not defined WINBUILD exit /b 0
+if %WINBUILD% LSS 10586 exit /b 0
+set "ESC="
+for /f %%E in ('echo prompt $E^| cmd') do set "ESC=%%E"
+if not defined ESC exit /b 0
+set "C_WARN=%ESC%[38;5;208m"
+set "C_OK=%ESC%[92m"
+set "C_OFF=%ESC%[0m"
+exit /b 0
+
 :MSG_UNPACK
 echo.
 if defined RU goto :MSG_UNPACK_RU
-echo  Migrator cannot start: its files are not next to Migrator.bat.
-echo  If you opened Migrator.bat inside the downloaded ZIP archive, unpack the
-echo  whole archive first (right-click the ZIP, "Extract All"), then run
-echo  Migrator.bat from the unpacked folder.
+echo  %C_WARN%[!]  Migrator cannot start: its files are not next to Migrator.bat.%C_OFF%
+echo       This happens when Migrator.bat is opened inside the downloaded ZIP archive.
+echo.
+echo  %C_OK%-^>   Unpack the whole archive first (right-click the ZIP, "Extract All"),%C_OFF%
+echo  %C_OK%     then run Migrator.bat from the unpacked folder.%C_OFF%
 echo.
 exit /b 0
 :MSG_UNPACK_RU
-echo  Migrator не может запуститься: рядом с Migrator.bat нет его файлов.
-echo  Если вы открыли Migrator.bat прямо в скачанном ZIP-архиве, сначала
-echo  распакуйте весь архив (правой кнопкой по ZIP, «Извлечь все»), затем
-echo  запустите Migrator.bat из распакованной папки.
+echo  %C_WARN%[!]  Migrator не может запуститься: рядом с Migrator.bat нет его файлов.%C_OFF%
+echo       Так бывает, если открыть Migrator.bat прямо в скачанном ZIP-архиве.
+echo.
+echo  %C_OK%-^>   Сначала распакуйте весь архив (правой кнопкой по ZIP, «Извлечь все»),%C_OFF%
+echo  %C_OK%     затем запустите Migrator.bat из распакованной папки.%C_OFF%
 echo.
 exit /b 0
 
 :MSG_NEED_TOOLS
 echo.
 if defined RU goto :MSG_NEED_TOOLS_RU
-echo  PowerShell 7 was not found on this PC. Migrator needs two free programs:
+echo  %C_WARN%[!]  PowerShell 7 was not found on this PC.%C_OFF%
+echo       Migrator needs two free programs:
 echo.
-echo    PowerShell 7   Microsoft, MIT license       https://aka.ms/powershell
-echo    7-Zip          Igor Pavlov, GNU LGPL        https://www.7-zip.org
+echo         PowerShell 7   Microsoft, MIT license       https://aka.ms/powershell
+echo         7-Zip          Igor Pavlov, GNU LGPL        https://www.7-zip.org
 echo.
-echo  Migrator can get the missing ones from the internet now. You will be
-echo  asked about each program separately and can choose how:
+echo  %C_OK%-^>   Type Y and press Enter: Migrator gets the missing ones from the internet.%C_OFF%
+echo       You are asked about each program separately and choose how:
+echo         - install it in Windows with winget, the Windows package manager
+echo           (for all users; Windows asks for administrator rights), or
+echo         - download a portable copy into the Migrator folder
+echo           (nothing is installed in Windows).
+echo       Nothing is downloaded or installed without your answer.
 echo.
-echo    - install it in Windows with winget, the Windows package manager
-echo      (for all users; Windows will ask for administrator rights), or
-echo    - download a portable copy into the Migrator folder
-echo      (nothing is installed in Windows).
-echo.
-echo  Nothing is downloaded or installed without your answer.
-echo.
-echo  No internet on this PC? Use a Migrator folder with the Tools folder
-echo  filled: on the old PC choose the "restore kit" when you make the backup.
+echo  %C_OK%-^>   No internet on this PC? Take a Migrator folder with the Tools folder filled.%C_OFF%
+echo       On the old PC choose the "restore kit" when you make the backup.
 echo.
 exit /b 0
 :MSG_NEED_TOOLS_RU
-echo  PowerShell 7 на этом компьютере не найден. Migrator нужны две
-echo  бесплатные программы:
+echo  %C_WARN%[!]  PowerShell 7 на этом компьютере не найден.%C_OFF%
+echo       Migrator нужны две бесплатные программы:
 echo.
-echo    PowerShell 7   Microsoft, лицензия MIT      https://aka.ms/powershell
-echo    7-Zip          Игорь Павлов, GNU LGPL       https://www.7-zip.org
+echo         PowerShell 7   Microsoft, лицензия MIT      https://aka.ms/powershell
+echo         7-Zip          Игорь Павлов, GNU LGPL       https://www.7-zip.org
 echo.
-echo  Migrator может получить недостающие из интернета сейчас. О каждой
-echo  программе будет отдельный вопрос, и можно выбрать способ:
+echo  %C_OK%-^>   Введите Y и нажмите Enter: Migrator получит недостающие из интернета.%C_OFF%
+echo       О каждой программе будет отдельный вопрос, и можно выбрать способ:
+echo         - установить в Windows через winget, менеджер пакетов Windows
+echo           (для всех пользователей; Windows запросит права администратора), или
+echo         - скачать переносную копию в папку Migrator
+echo           (в Windows ничего не устанавливается).
+echo       Без вашего ответа ничего не скачивается и не устанавливается.
 echo.
-echo    - установить в Windows через winget, менеджер пакетов Windows
-echo      (для всех пользователей; Windows запросит права администратора), или
-echo    - скачать переносную копию в папку Migrator
-echo      (в Windows ничего не устанавливается).
-echo.
-echo  Без вашего ответа ничего не скачивается и не устанавливается.
-echo.
-echo  На компьютере нет интернета? Возьмите папку Migrator с заполненной
-echo  папкой Tools: на старом компьютере выберите «комплект для
-echo  восстановления» при создании копии.
+echo  %C_OK%-^>   Нет интернета? Возьмите папку Migrator с заполненной папкой Tools.%C_OFF%
+echo       На старом компьютере выберите «комплект для восстановления» при создании копии.
 echo.
 exit /b 0

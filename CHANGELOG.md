@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.0 — 2026-11-17
+
+### Added
+
+- **The programs of the old PC can be installed again after a restore.** A profile archive never contained the programs; now a backup saves their list in the manifest (`programs`): the packages `winget` can install and the names of everything installed. After a restore the list is written to `Logs\programs-<archive>.txt`, and on a PC with `winget` Migrator shows a list with check marks:
+  - programs already installed on the new PC and runtimes (Visual C++, .NET, WebView2, ...) are not shown;
+  - utilities tied to the hardware of the old PC, trial antiviruses and "optimizers" are shown without a tick;
+  - nothing is installed without two typed `y` (open the list, start the installation); each program is installed separately, and the ones that failed are named at the end.
+  - Both lists are settings: `ProgramsHidden`, `ProgramsUnchecked`. `backup.ps1 -NoProgramList` saves no list. A backup of a folder given with `-SourcePath` has no list: that folder says nothing about the programs of this PC.
+- A check list in the interface (arrows, Space, `A` all, `N` none); without a real console the items are toggled by number.
+
+### Changed
+
+- **Problems are orange, the way out is green.** The messages about a missing PowerShell 7 or 7-Zip (`Migrator.bat`, `Get-Tools.ps1`, the offer inside Migrator) were one block of text of the same color. Now the problem line is marked `[!]` and orange, every way to solve it is marked `->` and green, and explanations stay quiet. All warnings of Migrator use the same orange instead of yellow. Where the console cannot show it (Windows older than 10 1511, redirected output, `NO_COLOR` for the launcher) the text is plain or yellow as before.
+
+
 ## 2.3.1 — 2026-11-14
 
 Found by running the release in Windows Sandbox, a clean Windows without winget.

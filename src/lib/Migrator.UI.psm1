@@ -73,6 +73,29 @@ function Write-Hint {
     Write-Host ('  ' + $Text) -ForegroundColor $script:Theme.Hint
 }
 
+function Test-RichColor {
+    # Orange is not among the 16 console colors: it needs an escape sequence,
+    # which only a real terminal understands. Redirected output (logs, tests)
+    # gets the plain yellow instead.
+    try { return [bool]$Host.UI.SupportsVirtualTerminal -and -not [Console]::IsOutputRedirected } catch { return $false }
+}
+
+function Write-Themed {
+    # Text in a theme color. "Warn" is orange where the terminal can show it.
+    param(
+        [AllowEmptyString()][string]$Text = '',
+        [string]$Kind = 'Text',
+        [switch]$NoNewline
+    )
+    if (-not $script:Theme.ContainsKey($Kind)) { $Kind = 'Text' }
+    if ($Kind -eq 'Warn' -and (Test-RichColor)) {
+        $esc = [char]27
+        Write-Host ("$esc[38;5;208m$Text$esc[0m") -NoNewline:$NoNewline
+    } else {
+        Write-Host $Text -ForegroundColor $script:Theme[$Kind] -NoNewline:$NoNewline
+    }
+}
+
 function Write-Ok {
     param([Parameter(Mandatory)][string]$Text)
     Write-Host '  [OK] ' -ForegroundColor $script:Theme.Ok -NoNewline
@@ -80,9 +103,23 @@ function Write-Ok {
 }
 
 function Write-Warn {
+    # A problem or something to pay attention to: orange.
     param([Parameter(Mandatory)][string]$Text)
-    Write-Host '  [!]  ' -ForegroundColor $script:Theme.Warn -NoNewline
-    Write-Host $Text -ForegroundColor $script:Theme.Warn
+    Write-Themed -Text ('  [!]  ' + $Text) -Kind 'Warn'
+}
+
+function Write-Solution {
+    # What to do about the problem above: green, so the way out is the first
+    # thing the eye finds in a block of explanations.
+    param([Parameter(Mandatory)][string]$Text)
+    Write-Host '  ->   ' -ForegroundColor $script:Theme.Ok -NoNewline
+    Write-Host $Text -ForegroundColor $script:Theme.Ok
+}
+
+function Write-Detail {
+    # A quiet explanation line aligned under the text of Write-Warn / Write-Solution.
+    param([AllowEmptyString()][string]$Text = '')
+    Write-Host ('       ' + $Text) -ForegroundColor $script:Theme.Text
 }
 
 function Write-Err {
@@ -106,13 +143,13 @@ function Write-Fields {
 
     foreach ($label in $Fields.Keys) {
         $value = $Fields[$label]
-        $color = $script:Theme.Value
+        $kind = 'Value'
         if ($value -is [array] -and $value.Count -eq 2 -and $script:Theme.ContainsKey([string]$value[1])) {
-            $color = $script:Theme[[string]$value[1]]
+            $kind = [string]$value[1]
             $value = $value[0]
         }
         Write-Host ((' ' * $Indent) + ([string]$label).PadRight($width) + ' : ') -ForegroundColor $script:Theme.Label -NoNewline
-        Write-Host ([string]$value) -ForegroundColor $color
+        Write-Themed -Text ([string]$value) -Kind $kind
     }
 }
 
@@ -126,14 +163,14 @@ function Write-SummaryBox {
         [string]$Color = 'Title'
     )
 
-    $ruleColor = if ($script:Theme.ContainsKey($Color)) { $script:Theme[$Color] } else { $script:Theme.Title }
+    $kind = if ($script:Theme.ContainsKey($Color)) { $Color } else { 'Title' }
     $rule = '+' + ('-' * ($script:RuleWidth - 4)) + '+'
     Write-Host ''
-    Write-Host ('  ' + $rule) -ForegroundColor $ruleColor
-    Write-Host ('    ' + $Title) -ForegroundColor $ruleColor
-    Write-Host ('  ' + $rule) -ForegroundColor $ruleColor
+    Write-Themed -Text ('  ' + $rule) -Kind $kind
+    Write-Themed -Text ('    ' + $Title) -Kind $kind
+    Write-Themed -Text ('  ' + $rule) -Kind $kind
     Write-Fields -Fields $Fields -Indent 4
-    Write-Host ('  ' + $rule) -ForegroundColor $ruleColor
+    Write-Themed -Text ('  ' + $rule) -Kind $kind
 }
 
 # ---------------------------------------------------------------------------
@@ -303,6 +340,142 @@ function Show-Menu {
             & $draw
 
             if ($null -ne $choice) { return $Items[$choice].Value }
+        }
+    } finally {
+        try { [Console]::CursorVisible = $cursorVisible } catch { }
+    }
+}
+
+function New-CheckItem {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Value,
+        [Parameter(Mandatory)][string]$Label,
+        [bool]$Checked = $true,
+        [string]$Hint = ''
+    )
+    return [pscustomobject]@{ Value = $Value; Label = $Label; Checked = $Checked; Hint = $Hint }
+}
+
+function Update-CheckSelection {
+    # Toggles the items whose numbers are typed ("1 3 5", "2,4", "7-9").
+    # Returns $false when the text holds anything else.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object[]]$Items, [AllowEmptyString()][string]$Text = '')
+
+    $numbers = [System.Collections.Generic.List[int]]::new()
+    foreach ($part in @($Text -split '[\s,;]+' | Where-Object { $_ })) {
+        if ($part -match '^(\d+)-(\d+)$') {
+            $from = [int]$Matches[1]; $to = [int]$Matches[2]
+            if ($from -gt $to -or $to - $from -gt 1000) { return $false }
+            foreach ($number in $from..$to) { $numbers.Add($number) }
+        } elseif ($part -match '^\d+$') {
+            $numbers.Add([int]$part)
+        } else {
+            return $false
+        }
+    }
+    if ($numbers.Count -eq 0) { return $false }
+    foreach ($number in $numbers) { if ($number -lt 1 -or $number -gt $Items.Count) { return $false } }
+    foreach ($number in ($numbers | Sort-Object -Unique)) { $Items[$number - 1].Checked = -not $Items[$number - 1].Checked }
+    return $true
+}
+
+function Show-CheckList {
+    # A list with check marks. Up/Down move, Space ticks, A ticks all,
+    # N clears all, Enter confirms, Esc cancels. Returns the values of the
+    # ticked items (possibly none), or $null when cancelled.
+    # Without a real console the items are numbered and toggled by number.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object[]]$Items,
+        [string]$Title = ''
+    )
+
+    if ($Items.Count -eq 0) { return @() }
+    if ($Title) {
+        Write-Host ''
+        Write-Host ('  ' + $Title) -ForegroundColor $script:Theme.Value
+    }
+    $mark = { param($item) if ($item.Checked) { '[x]' } else { '[ ]' } }
+    $selection = { @($Items | Where-Object { $_.Checked } | ForEach-Object { $_.Value }) }
+
+    if (-not (Test-InteractiveConsole)) {
+        while ($true) {
+            for ($i = 0; $i -lt $Items.Count; $i++) {
+                $hint = if ($Items[$i].Hint) { '  (' + $Items[$i].Hint + ')' } else { '' }
+                Write-Host ('  {0,3}. {1} {2}{3}' -f ($i + 1), (& $mark $Items[$i]), $Items[$i].Label, $hint) -ForegroundColor $script:Theme.Text
+            }
+            $ticked = @($Items | Where-Object { $_.Checked }).Count
+            Write-Hint (T 'ui.check_count' $ticked $Items.Count)
+            $raw = Read-Line (T 'ui.check_numbers')
+            if ([string]::IsNullOrWhiteSpace($raw)) { return , @(& $selection) }
+            if ($raw.Trim().ToUpperInvariant() -in @('Q', 'ESC')) { return $null }
+            if (-not (Update-CheckSelection -Items $Items -Text $raw)) { Write-Warn (T 'ui.menu_invalid') }
+        }
+    }
+
+    $width = [Math]::Max(20, [Console]::WindowWidth - 1)
+    $height = 15
+    try { $height = [Console]::WindowHeight - 8 } catch { }
+    $page = [Math]::Max(3, [Math]::Min($Items.Count, [Math]::Min(20, $height)))
+    $lineCount = $page + 2      # rows, counter, help
+    $selected = 0
+    $top = 0
+
+    $draw = {
+        for ($row = 0; $row -lt $page; $row++) {
+            $i = $top + $row
+            $item = $Items[$i]
+            $isSelected = ($i -eq $selected)
+            $line = ('{0}{1} {2}' -f $(if ($isSelected) { ' > ' } else { '   ' }), (& $mark $item), $item.Label)
+            if ($item.Hint) { $line += '  (' + $item.Hint + ')' }
+            if ($line.Length -gt $width) { $line = $line.Substring(0, $width) }
+            if ($isSelected) {
+                Write-Host $line.PadRight($width) -ForegroundColor Black -BackgroundColor $script:Theme.Accent
+            } elseif ($item.Checked) {
+                Write-Host $line.PadRight($width) -ForegroundColor $script:Theme.Value
+            } else {
+                Write-Host $line.PadRight($width) -ForegroundColor $script:Theme.Hint
+            }
+        }
+        $ticked = @($Items | Where-Object { $_.Checked }).Count
+        $counter = '   ' + (T 'ui.check_count' $ticked $Items.Count)
+        if ($Items.Count -gt $page) { $counter += '   {0}-{1} / {2}' -f ($top + 1), ($top + $page), $Items.Count }
+        if ($counter.Length -gt $width) { $counter = $counter.Substring(0, $width) }
+        Write-Host $counter.PadRight($width) -ForegroundColor $script:Theme.Ok
+        $help = '   ' + (T 'ui.check_help')
+        if ($help.Length -gt $width) { $help = $help.Substring(0, $width) }
+        Write-Host $help.PadRight($width) -ForegroundColor $script:Theme.Hint
+    }
+
+    $cursorVisible = $true
+    try { $cursorVisible = [Console]::CursorVisible; [Console]::CursorVisible = $false } catch { }
+    try {
+        & $draw
+        while ($true) {
+            $key = [Console]::ReadKey($true)
+            $done = $false
+            switch ($key.Key) {
+                'UpArrow'   { $selected = ($selected - 1 + $Items.Count) % $Items.Count }
+                'DownArrow' { $selected = ($selected + 1) % $Items.Count }
+                'PageUp'    { $selected = [Math]::Max(0, $selected - $page) }
+                'PageDown'  { $selected = [Math]::Min($Items.Count - 1, $selected + $page) }
+                'Home'      { $selected = 0 }
+                'End'       { $selected = $Items.Count - 1 }
+                'Spacebar'  { $Items[$selected].Checked = -not $Items[$selected].Checked }
+                'A'         { foreach ($item in $Items) { $item.Checked = $true } }
+                'N'         { foreach ($item in $Items) { $item.Checked = $false } }
+                'Enter'     { $done = $true }
+                'Escape'    { return $null }
+            }
+            if ($selected -lt $top) { $top = $selected }
+            if ($selected -ge $top + $page) { $top = $selected - $page + 1 }
+
+            # Redraw in place: go back up over the lines just written.
+            [Console]::SetCursorPosition(0, [Math]::Max(0, [Console]::CursorTop - $lineCount))
+            & $draw
+            if ($done) { return , @(& $selection) }
         }
     } finally {
         try { [Console]::CursorVisible = $cursorVisible } catch { }
@@ -655,6 +828,8 @@ Export-ModuleMember -Function @(
     'Write-Ok'
     'Write-Warn'
     'Write-Err'
+    'Write-Solution'
+    'Write-Detail'
     'Write-Fields'
     'Write-SummaryBox'
     'Read-Line'
@@ -662,6 +837,9 @@ Export-ModuleMember -Function @(
     'Read-YesNo'
     'New-MenuItem'
     'Show-Menu'
+    'New-CheckItem'
+    'Update-CheckSelection'
+    'Show-CheckList'
     'New-EtaEstimator'
     'Update-EtaEstimator'
     'Format-RemainingTime'

@@ -65,12 +65,12 @@ Write-Host ''
 Write-Host '2. Modules, configuration, localization' -ForegroundColor Yellow
 
 $env:MIGRATOR_LANG = 'en'
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.3.1') 'Tool version is 2.3.1'
+Assert-True ([string]$config.ToolVersion -eq '2.4.0') 'Tool version is 2.4.0'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -194,8 +194,17 @@ try {
         $started = [bool]($out -match 'required tools|INJECTED|is not recognized')
         Assert-True ($LASTEXITCODE -eq 1 -and $declined -and -not $started) "Launcher installs nothing on $($case[1])"
     }
+
+    # The problem and the way out are marked; NO_COLOR gives plain text.
+    $escape = [string][char]27
+    $env:NO_COLOR = '1'
+    $plainText = @('' | cmd.exe /c "`"$launcher`"" 2>&1 | ForEach-Object { [string]$_ })
+    Remove-Item Env:NO_COLOR
+    Assert-True ([bool]($enText -match '\[!\]  PowerShell 7 was not found') -and [bool]($enText -match '->   Type Y') -and
+        [bool]($plainText -match '\[!\]  PowerShell 7 was not found') -and -not (($plainText -join '').Contains($escape))) 'Launcher marks the problem and the way out; NO_COLOR removes the colors'
 } finally {
     Remove-Item Env:MIGRATOR_TEST_NO_PWSH -ErrorAction SilentlyContinue
+    Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue
 }
 # Download without winget: the pinned 7-Zip package must be consistent.
 $getToolsText = [IO.File]::ReadAllText((Join-Path $toolRoot 'Get-Tools.ps1'))
@@ -227,6 +236,53 @@ $moved = @(Get-FoldersOutsideProfile -ProfilePath 'C:\Users\Alex' -ShellFolders 
 })
 Assert-True ($moved.Count -eq 2 -and ($moved.Path -join '|') -eq 'D:\Docs|\\nas\music' -and $moved[0].Name -eq 'Documents') "Known folders moved out of the profile are reported, those inside it are not ($(($moved.Path) -join ', '))"
 Assert-True (Reset-SleepTimer -Force) 'Windows accepts the "PC is busy, do not sleep" call'
+
+# The list of installed programs: what winget can install again, without
+# runtimes, and with hardware utilities and trial antiviruses unticked.
+$programDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force -Path $programDir | Out-Null
+try {
+    $exportFile = Join-Path $programDir 'export.json'
+    Set-Content -LiteralPath $exportFile -Encoding utf8 -Value (@{
+        Sources = @(
+            @{ SourceDetails = @{ Name = 'winget' }; Packages = @(
+                @{ PackageIdentifier = 'Mozilla.Firefox' }, @{ PackageIdentifier = '7zip.7zip' }
+                @{ PackageIdentifier = 'Microsoft.VCRedist.2015+.x64' }, @{ PackageIdentifier = 'Intel.Something' }
+                @{ PackageIdentifier = 'McAfee.Security' }
+            ) }
+            @{ SourceDetails = @{ Name = 'msstore' }; Packages = @(@{ PackageIdentifier = '9NBLGGH4NNS1' }) }
+        )
+    } | ConvertTo-Json -Depth 6)
+    $env:MIGRATOR_TEST_WINGET_EXPORT = $exportFile
+    $ids = Get-WingetPackageIds
+    $ids = @($ids)
+    Assert-True ($ids.Count -eq 5 -and $ids -contains 'Mozilla.Firefox' -and $ids -notcontains '9NBLGGH4NNS1') "Program list takes the winget packages and leaves the Store ids out ($($ids -join ', '))"
+    $env:MIGRATOR_TEST_WINGET_EXPORT = Join-Path $programDir 'missing.json'
+    Assert-True ($null -eq (Get-WingetPackageIds)) 'Program list is "unknown", not empty, when winget cannot be asked'
+
+    $choices = @(Get-ProgramChoices -Ids $ids -InstalledIds @('7zip.7zip'))
+    $states = @($choices | Sort-Object Id | ForEach-Object { '{0}={1}' -f $_.Id, $_.State }) -join ' '
+    Assert-True ($states -eq '7zip.7zip=Present Intel.Something=Unchecked McAfee.Security=Unchecked Microsoft.VCRedist.2015+.x64=Hidden Mozilla.Firefox=Install') "Programs are sorted into install, unticked, hidden and already present ($states)"
+    Assert-True (@(Get-InstalledProgramNames).Count -gt 0) 'Names of the installed programs are read from Windows'
+
+    $checkItems = @(1..4 | ForEach-Object { New-CheckItem -Value $_ -Label "item $_" -Checked ($_ -le 2) })
+    $toggled = Update-CheckSelection -Items $checkItems -Text '1, 3-4'
+    $rejected = (Update-CheckSelection -Items $checkItems -Text '2 9') -or (Update-CheckSelection -Items $checkItems -Text 'abc') -or (Update-CheckSelection -Items $checkItems -Text '')
+    Assert-True ($toggled -and -not $rejected -and (@($checkItems | Where-Object Checked | ForEach-Object Value) -join ',') -eq '2,3,4') 'Check list: numbers and ranges toggle the items, anything else changes nothing'
+
+    # After a restore: the list goes to a file; a non-interactive run installs nothing.
+    $env:MIGRATOR_TEST_WINGET_EXPORT = $exportFile
+    $listFile = Join-Path $programDir 'programs.txt'
+    $shown = @(Invoke-ProgramRestore -Manifest @{ programs = @{ winget = $ids; installed = @('Firefox  130.0', 'Some Tool') } } `
+        -SourceUser 'alex' -ListPath $listFile 6>&1 | ForEach-Object { [string]$_ })
+    $listText = if (Test-Path -LiteralPath $listFile) { Get-Content -LiteralPath $listFile -Raw } else { '' }
+    Assert-True ([bool]($shown -match '2 in total, 5 of them') -and $listText -match 'Mozilla\.Firefox' -and $listText -match 'Some Tool') 'Restore writes the saved program list to a file and says where it is'
+    $none = @(Invoke-ProgramRestore -Manifest @{ sourceUser = 'alex' } -ListPath (Join-Path $programDir 'none.txt') 6>&1)
+    Assert-True ($none.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $programDir 'none.txt'))) 'An archive without a program list (older versions) adds nothing to the restore'
+} finally {
+    Remove-Item Env:MIGRATOR_TEST_WINGET_EXPORT -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $programDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $ruLocale = Import-PowerShellDataFile -LiteralPath (Join-Path $toolRoot 'src\locale\ru.psd1')
 Assert-True ($ruLocale['ui.yes_letter'] -eq 'y' -and $ruLocale['ui.no_letter'] -eq 'n') 'Russian interface asks y/n like the English one'

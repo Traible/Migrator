@@ -174,13 +174,16 @@ function Request-Archiver {
     $archiver = Get-ArchiverPath
     if ($archiver -or -not $Interactive -or -not (Test-InteractiveConsole)) { return $archiver }
 
+    # The problem is orange, each way out is green, explanations stay quiet.
     Write-Host ''
     Write-Warn (T 'tools.7zip.missing')
-    Write-Hint (T 'tools.7zip.about')
+    Write-Detail (T 'tools.7zip.about')
 
     # 1. Install in Windows with winget, when this PC has it.
     if (Get-Command 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue) {
-        Write-Hint (T 'tools.install.how')
+        Write-Host ''
+        Write-Solution (T 'tools.7zip.solution_winget')
+        Write-Detail (T 'tools.install.how')
         if (Read-YesNo (T 'tools.7zip.ask') $false) {
             Write-Hint (T 'tools.install.progress' '7-Zip')
             # A separate process attached to this console: winget draws its own
@@ -199,7 +202,7 @@ function Request-Archiver {
             Write-Err (T 'tools.install.failed' $process.ExitCode)
         }
     } else {
-        Write-Hint (T 'tools.no_winget')
+        Write-Detail (T 'tools.no_winget')
     }
 
     # 2. A portable copy in the Migrator folder: no winget and no
@@ -207,7 +210,9 @@ function Request-Archiver {
     #    Get-Tools.ps1 downloads the official package and checks its SHA256.
     $getTools = Join-Path (Get-MigratorRoot) 'Get-Tools.ps1'
     if (Test-Path -LiteralPath $getTools -PathType Leaf) {
-        Write-Hint (T 'tools.7zip.portable_about')
+        Write-Host ''
+        Write-Solution (T 'tools.7zip.solution_portable')
+        Write-Detail (T 'tools.7zip.portable_about')
         if (Read-YesNo (T 'tools.7zip.ask_portable') $false) {
             & (Get-Process -Id $PID).Path -NoLogo -NoProfile -ExecutionPolicy Bypass -File $getTools -SevenZipOnly -Yes | Out-Host
             $archiver = Get-ArchiverPath
@@ -218,7 +223,8 @@ function Request-Archiver {
         }
     }
 
-    Write-Hint (T 'm.tools.get_tools')
+    Write-Host ''
+    Write-Solution (T 'm.tools.get_tools')
     return $null
 }
 

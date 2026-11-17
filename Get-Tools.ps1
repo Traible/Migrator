@@ -49,7 +49,17 @@ $pwshDir = Join-Path $toolsRoot 'pwsh'
 function Write-Step([string]$Text) { Write-Host ''; Write-Host $Text -ForegroundColor Cyan }
 function Write-Good([string]$Text) { Write-Host "  [OK] $Text" -ForegroundColor Green }
 function Write-Note([string]$Text) { Write-Host "  $Text" -ForegroundColor DarkGray }
-function Write-Bad([string]$Text)  { Write-Host "  [!]  $Text" -ForegroundColor Yellow }
+# A problem is orange, the way out of it (Write-Do) is green, explanations
+# (Write-More) stay quiet. Orange is not among the 16 console colors: it
+# needs an escape sequence, which only a real console understands.
+$richColor = $false
+try { $richColor = [bool]$Host.UI.SupportsVirtualTerminal -and -not [Console]::IsOutputRedirected } catch { }
+function Write-Bad([string]$Text) {
+    if ($richColor) { Write-Host ("  {0}[38;5;208m[!]  {1}{0}[0m" -f [char]27, $Text) }
+    else { Write-Host "  [!]  $Text" -ForegroundColor Yellow }
+}
+function Write-Do([string]$Text)   { Write-Host "  ->   $Text" -ForegroundColor Green }
+function Write-More([string]$Text) { Write-Host "       $Text" -ForegroundColor Gray }
 
 function Confirm-Action([string]$Question) {
     # Nothing is downloaded or installed on an empty answer: the user has to
@@ -97,10 +107,11 @@ function Install-WithWinget([string]$Id, [string]$Name, [string]$About) {
         return $false
     }
     Write-Bad "$Name is not installed."
-    Write-Note $About
-    Write-Note "winget (the Windows package manager) would download it and install it on this PC"
-    Write-Note "for all users; Windows asks for administrator rights. Installing it means"
-    Write-Note "accepting its license. It stays installed until you remove it in Windows Settings."
+    Write-More $About
+    Write-Host ''
+    Write-Do "Install $Name in Windows with winget, the Windows package manager."
+    Write-More 'For all users of this PC; Windows asks for administrator rights. Installing it means'
+    Write-More 'accepting its license. It stays installed until you remove it in Windows Settings.'
     if (-not (Confirm-Action "Install $Name now?")) {
         Write-Note "$Name was not installed."
         return $false
@@ -348,8 +359,9 @@ $sevenZip = Find-SevenZip
 
 function Request-PortableSevenZip {
     # Without winget, or when the user did not want a system-wide install.
-    Write-Note "A portable 7-Zip $SevenZipVersion (about 2 MB) can be downloaded from the author's GitHub release"
-    Write-Note 'into the Tools folder of Migrator. Nothing is installed in Windows.'
+    Write-Host ''
+    Write-Do "Download a portable 7-Zip $SevenZipVersion (about 2 MB) into the Tools folder of Migrator."
+    Write-More "From the author's GitHub release. Nothing is installed in Windows."
     if (-not (Confirm-Action "Download portable 7-Zip into Tools\7-Zip?")) { return $false }
     try {
         return [bool](Install-PortableSevenZip)
@@ -385,7 +397,7 @@ if ($sevenZip) {
     }
 } else {
     Write-Bad '7-Zip was not found.'
-    Write-Note 'Install it from https://www.7-zip.org (or: winget install 7zip.7zip) and run this script again.'
+    Write-Do 'Install it from https://www.7-zip.org (or: winget install 7zip.7zip) and run this script again.'
 }
 
 # ---------------------------------------------------------------------------
@@ -395,8 +407,9 @@ Write-Step 'PowerShell 7 (runs Migrator)'
 $pwsh = Find-Pwsh
 
 if ($Portable -and -not $CheckOnly -and -not (Test-Path -LiteralPath (Join-Path $pwshDir 'pwsh.exe'))) {
-    Write-Note "A portable PowerShell $PowerShellVersion (about 110 MB) can be downloaded from Microsoft's official"
-    Write-Note 'GitHub release into the Tools folder of Migrator. Nothing is installed in Windows.'
+    Write-Host ''
+    Write-Do "Download a portable PowerShell $PowerShellVersion (about 110 MB) into the Tools folder of Migrator."
+    Write-More "From Microsoft's official GitHub release. Nothing is installed in Windows."
     if (Confirm-Action "Download portable PowerShell $PowerShellVersion into Tools\pwsh?") {
         try {
             if (Install-PortablePwsh) { $pwsh = Find-Pwsh }
@@ -411,8 +424,9 @@ if ($Portable -and -not $CheckOnly -and -not (Test-Path -LiteralPath (Join-Path 
         Write-Bad 'PowerShell 7 is not installed, and winget (the Windows package manager) is not available on this PC.'
     }
     if (-not $pwsh) {
-        Write-Note "A portable PowerShell $PowerShellVersion (about 110 MB) can be downloaded from Microsoft's official"
-        Write-Note 'GitHub release into the Tools folder of Migrator. Nothing is installed in Windows.'
+        Write-Host ''
+        Write-Do "Download a portable PowerShell $PowerShellVersion (about 110 MB) into the Tools folder of Migrator."
+        Write-More "From Microsoft's official GitHub release. Nothing is installed in Windows."
         if (Confirm-Action "Download portable PowerShell $PowerShellVersion into Tools\pwsh?") {
             try {
                 if (Install-PortablePwsh) { $pwsh = Find-Pwsh }
@@ -427,7 +441,7 @@ if ($pwsh) {
     Write-Good "Found: $pwsh"
 } else {
     Write-Bad 'PowerShell 7 was not found.'
-    Write-Note 'Install it from https://aka.ms/powershell (or: winget install Microsoft.PowerShell) and run this script again.'
+    Write-Do 'Install it from https://aka.ms/powershell (or: winget install Microsoft.PowerShell) and run this script again.'
 }
 
 Write-Host ''
@@ -435,5 +449,5 @@ if ($sevenZip -and $pwsh) {
     Write-Host 'Everything is ready. Start Migrator.bat.' -ForegroundColor Green
     exit 0
 }
-Write-Host 'Some tools are still missing; see the notes above.' -ForegroundColor Yellow
+Write-Bad 'Some tools are still missing; see the notes above.'
 exit 1

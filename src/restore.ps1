@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $toolRoot = Split-Path -Parent $PSScriptRoot
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 
@@ -628,6 +628,17 @@ function Invoke-ArchiveRestoreFlow {
         foreach ($line in @(@($result.Issues.DataErrors) + @($result.Issues.Other) | Select-Object -First 5)) { Write-Hint "    $line" }
         if ($NonInteractive) { throw (T 'r.error.failed' $reason) }
         return
+    }
+
+    # The saved program list: written to a file, and in an interactive run
+    # offered for installation. A problem here never spoils a finished restore.
+    try {
+        $listPath = Join-Path $logRoot ('programs-{0}.txt' -f [IO.Path]::GetFileNameWithoutExtension($metadata.ArchiveName))
+        Invoke-ProgramRestore -Manifest $metadata.Manifest -SourceUser ([string]$sourceUser) -ListPath $listPath `
+            -Interactive:$interactive -Log { param($message) Write-RestoreLog $message }
+    } catch {
+        Write-RestoreLog "Program list step failed: $($_.Exception.Message)"
+        Write-Warn $_.Exception.Message
     }
 
     Show-AfterRestoreNotes -Target $target

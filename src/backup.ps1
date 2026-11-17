@@ -14,6 +14,8 @@ param(
     # Put Migrator with portable PowerShell and 7-Zip next to the archive.
     [ValidateSet('None','Copy','Download')]
     [string]$RestoreKit,
+    # Do not save the list of installed programs in the manifest.
+    [switch]$NoProgramList,
     [switch]$Force
 )
 
@@ -21,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $toolRoot = Split-Path -Parent $PSScriptRoot
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 
@@ -390,6 +392,22 @@ if ($skippedFiles.Count -gt 0 -or $result.StdErr.Trim()) {
     )
 }
 
+# The programs are not in a profile archive; their list is, so the new PC can
+# offer to install them again. Only for a profile of this Windows: a folder
+# given with -SourcePath says nothing about the programs of this PC.
+$programList = $null
+$programListFailed = $false
+if ($finalOk -and $profile -and -not $NoProgramList) {
+    Write-Hint (T 'b.programs.collecting')
+    try {
+        $programList = Get-InstalledProgramList -Sid ([string]$profile.SID)
+        Write-LogLine -Path $artifacts.Log -Message "Program list: winget=$(if ($null -eq $programList.Winget) { 'n/a' } else { @($programList.Winget).Count }) installed=$(@($programList.Installed).Count)"
+    } catch {
+        $programListFailed = $true
+        Write-LogLine -Path $artifacts.Log -Message "Program list was not saved: $($_.Exception.Message)"
+    }
+}
+
 $browserNames = @(Get-InstalledBrowsers | Select-Object -ExpandProperty Name -Unique)
 Write-ManifestFile -Path $artifacts.Manifest -Data @{
     toolVersion          = [string]$config.ToolVersion
@@ -418,6 +436,7 @@ Write-ManifestFile -Path $artifacts.Manifest -Data @{
     archiveSha256        = $archiveHash
     durationSeconds      = [math]::Round($result.Duration.TotalSeconds, 1)
     browsers             = $browserNames
+    programs             = if ($programList) { @{ winget = $programList.Winget; installed = @($programList.Installed) } } else { $null }
 }
 
 $verifyText = T "verify.$verifyState"
@@ -433,6 +452,13 @@ if ($kitResult) {
     $report[(T 'f.kit')] = if ($kitResult.Ok) { $kitResult.Path } else { @((T 'b.kit.failed' ($kitResult.Problems -join '; ')), 'Warn') }
 } elseif ($kit.State -eq 'Ready') {
     $report[(T 'f.kit')] = $kit.Path
+}
+if ($programList) {
+    $wingetCount = @($programList.Winget | Where-Object { $_ }).Count
+    $installedCount = @($programList.Installed).Count
+    $report[(T 'f.programs')] = T 'b.programs.saved' $wingetCount $installedCount
+} elseif ($programListFailed) {
+    $report[(T 'f.programs')] = @((T 'b.programs.not_saved'), 'Warn')
 }
 $report[(T 'f.manifest')] = $artifacts.Manifest
 

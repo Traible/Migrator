@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.3.1'
+        ToolVersion         = '2.4.0'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
@@ -129,6 +129,46 @@ function Get-DefaultConfig {
         )
 
         ExtraExcludes = @()
+
+        # The program list saved with a backup (winget package ids, matched
+        # with -like). Hidden: runtimes and components that come with the
+        # programs needing them, or with Windows itself.
+        ProgramsHidden = @(
+            'Microsoft.VCRedist.*'
+            'Microsoft.VCLibs.*'
+            'Microsoft.UI.Xaml.*'
+            'Microsoft.WindowsAppRuntime.*'
+            'Microsoft.DotNet.Runtime.*'
+            'Microsoft.DotNet.DesktopRuntime.*'
+            'Microsoft.DotNet.AspNetCore.*'
+            'Microsoft.DotNet.HostingBundle.*'
+            'Microsoft.DotNet.Framework.*'
+            'Microsoft.DotNet.Native.*'
+            'Microsoft.EdgeWebView2Runtime'
+            'Microsoft.Edge'
+            'Microsoft.AppInstaller'
+            'Microsoft.OneDrive'
+            'Microsoft.XNARedist'
+            'Microsoft.DirectX'
+            'Microsoft.msodbcsql.*'
+            'Microsoft.CLRTypesSQLServer.*'
+            'Microsoft.WebDeploy'
+            'Microsoft.WindowsPCHealthCheck'
+            'Microsoft.WindowsInstallationAssistant'
+            'Nvidia.PhysX'
+            'CreativeTechnology.OpenAL'
+            'Apple.Bonjour*'
+            'Apple.AppleSoftwareUpdate'
+            'EpicGames.EpicOnlineServices'
+        )
+        # Shown without a tick: utilities tied to the hardware of the old PC,
+        # trial antiviruses and "optimizers" that usually arrive uninvited.
+        ProgramsUnchecked = @(
+            'Intel.*', 'AMD.*', 'Nvidia.*', 'Realtek.*', 'Synaptics.*', 'Qualcomm.*'
+            'Dell.*', 'HP.*', 'Lenovo.*', 'ASUS.*', 'Acer.*', 'MSI.*', 'Gigabyte.*', 'Samsung.*', 'Huawei.*'
+            'McAfee.*', 'Norton.*', 'NortonLifeLock.*', 'Avast.*', 'AVG.*', 'Avira.*', 'Qihoo.*'
+            'IObit.*', 'Piriform.*', 'WildTangent.*', 'Reimage.*', 'DriverPack*'
+        )
     }
 }
 

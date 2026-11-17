@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.3.1
+  Migrator  v2.4.0
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -49,6 +49,8 @@ same, another or a brand-new account.
   is always a failure.
 - **Restore anywhere.** Current user, another existing user or a new local
   account; from an archive or directly from `Windows.old`.
+- **Brings the programs back.** The list of installed programs is saved with
+  the backup; after the restore you tick what to install again with `winget`.
 - **English and Russian interface**, arrow-key menus, progress with speed and
   remaining time.
 - **Scriptable.** Every step has a command-line switch for unattended runs.
@@ -73,7 +75,7 @@ Administrator (menu item *Restart as Administrator*).
 
 | Transferred | Not transferred |
 |---|---|
-| Documents, Desktop, Pictures, Downloads, Music, Videos | Installed programs, drivers, printers |
+| Documents, Desktop, Pictures, Downloads, Music, Videos | Installed programs (their **list** is saved, see below), drivers, printers |
 | Browser profiles: bookmarks, history, extensions, settings | Saved browser passwords and cookies (Windows ties them to the account; use browser sync) |
 | Application settings in `AppData\Roaming` and `AppData\Local` | Registry hives (`NTUSER.DAT`) - copying them breaks the target profile |
 | Everything else in the profile folder | VPN and Wi-Fi profiles, Windows Hello/PIN, EFS certificates |
@@ -134,6 +136,28 @@ offers to install PowerShell 7 and 7-Zip (this needs internet).
 - **Target** - the current user, another existing user (sign that user out
   first) or a new local account, which Migrator can create.
 
+## Programs
+
+A profile archive does not contain the programs. When a backup is made,
+Migrator saves their **list** in the manifest: the packages `winget` can
+install again and the names of everything installed.
+
+After a restore the list is written to `Logs\programs-<archive>.txt`. On a PC
+with `winget` Migrator offers to choose what to install:
+
+- programs already installed on the new PC and runtimes (Visual C++, .NET,
+  WebView2 and the like, which come with the programs that need them) are
+  not shown;
+- utilities tied to the hardware of the old PC, trial antiviruses and
+  "optimizers" are shown **without a tick**;
+- everything else is ticked. Space changes a tick, `A` ticks all, `N` clears
+  all, Enter confirms.
+
+Nothing is installed without two typed `y`: one to open the list and one to
+start. Paid programs are installed too, but ask for their license again.
+Both lists are settings (`ProgramsHidden`, `ProgramsUnchecked`); a backup made
+with `-NoProgramList` saves no list.
+
 ## Command line
 
 ```bat
@@ -150,7 +174,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 
 | Script | Switches |
 |---|---|
-| `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-RestoreKit None\|Copy\|Download`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
+| `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-RestoreKit None\|Copy\|Download`, `-NoProgramList`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
 | `restore.ps1` | `-Method Archive\|WindowsOld`, `-Archive`, `-SourceUser`, `-TargetUser`, `-TargetPath`, `-CreateUser`, `-Verify`, `-NoVerify`, `-Force`, `-NonInteractive` |
 | `main.ps1` | `-Language en\|ru\|auto` |
 
@@ -162,7 +186,7 @@ on failure.
 | File | Content |
 |---|---|
 | `PC-user-date.7z` | the archive; paths inside are relative to the profile folder |
-| `.manifest.json` | source user and SID, mode, sizes, result, skipped files, optional SHA256 |
+| `.manifest.json` | source user and SID, mode, sizes, result, skipped files, the list of installed programs, optional SHA256 |
 | `.summary.txt` | the same report as on screen, in the interface language |
 | `.errors.log` | skipped files and archiver messages (only when there were any) |
 | `.log` | start/finish records |
@@ -185,6 +209,8 @@ Keep the `.manifest.json` next to the archive: the restore uses it.
 | `CloudFolderPolicy` | `Auto` | `Auto`, `Exclude`, `Include` |
 | `ExcludeDevCaches` | `false` | also exclude developer caches in Full mode |
 | `ExtraExcludes` | `[]` | your own masks, see below |
+| `ProgramsHidden` | runtimes | winget package ids (wildcards) never offered after a restore |
+| `ProgramsUnchecked` | hardware utilities, trial antiviruses | package ids offered without a tick |
 | `ArchiverPath` | `Tools\7-Zip\7z.exe` | checked first; an installed 7-Zip is found automatically |
 
 ### Exclusion masks
@@ -215,7 +241,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 145 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 154 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 
