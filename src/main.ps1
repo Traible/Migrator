@@ -22,7 +22,79 @@ function Import-MigratorModules {
         Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force -Global
     }
 }
-Import-MigratorModules
+
+# ---------------------------------------------------------------------------
+# Before anything is loaded: is this copy complete?
+# A missing module would otherwise stop Migrator with a raw PowerShell error,
+# in the very case the self-check exists for. Nothing below uses the modules.
+# ---------------------------------------------------------------------------
+function Get-CopyProblems {
+    # Files that are missing or differ from files.sha256 (none in a development checkout).
+    $list = Join-Path $toolRoot 'files.sha256'
+    if (-not (Test-Path -LiteralPath $list -PathType Leaf)) { return @() }
+    $problems = foreach ($line in [IO.File]::ReadAllLines($list)) {
+        if ($line -notmatch '^([A-Fa-f0-9]{64})\s+\*?(.+)$') { continue }
+        $hash = $Matches[1]; $relative = $Matches[2].Trim()
+        $file = Join-Path $toolRoot $relative
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { $relative; continue }
+        if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $hash) { $relative }
+    }
+    return @($problems)
+}
+
+function Show-BrokenCopy {
+    # The last resort: the modules and the localization may be the missing
+    # files, so this message cannot use them. It is the one place where text
+    # is written in the script itself, in both languages.
+    param([string[]]$Problems = @(), [string]$Reason = '')
+    $russian = ($env:MIGRATOR_LANG -eq 'ru') -or
+        (-not $env:MIGRATOR_LANG -and [Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'ru')
+    $url = 'https://github.com/Traible/Migrator/releases/latest'
+    Write-Host ''
+    if ($russian) {
+        Write-Host '  [!]  Migrator не может запуститься: эта копия неполная или повреждена.'
+    } else {
+        Write-Host '  [!]  Migrator cannot start: this copy is incomplete or damaged.'
+    }
+    foreach ($name in @($Problems | Select-Object -First 8)) { Write-Host "       $name" }
+    if ($Problems.Count -eq 0 -and $Reason) { Write-Host "       $Reason" }
+    Write-Host ''
+    if ($russian) {
+        Write-Host "  ->   Скачайте Migrator заново и распакуйте весь архив: $url"
+        Write-Host ''
+        Write-Host '  Нажмите Enter, чтобы закрыть...' -NoNewline
+    } else {
+        Write-Host "  ->   Download Migrator again and unpack the whole archive: $url"
+        Write-Host ''
+        Write-Host '  Press Enter to close...' -NoNewline
+    }
+    [void](Read-Host)
+}
+
+$copyProblems = @(Get-CopyProblems)
+$startupChecked = $false
+if ($copyProblems.Count -gt 0) {
+    # The self-check needs three modules and the two languages. When those
+    # files are in place, it reports the damage properly and can repair the
+    # copy from the latest release, even though other modules are missing.
+    $needed = @('src\lib\Migrator.Core.psm1', 'src\lib\Migrator.UI.psm1', 'src\lib\Migrator.Self.psm1', 'src\locale\en.psd1', 'src\locale\ru.psd1')
+    if (@($needed | Where-Object { -not (Test-Path -LiteralPath (Join-Path $toolRoot $_) -PathType Leaf) }).Count -eq 0) {
+        try {
+            foreach ($module in 'Core', 'UI', 'Self') {
+                Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force -Global
+            }
+            $startupChecked = $true
+            if (Invoke-StartupCheck) { return }
+        } catch { }       # reported below when the full load fails too
+    }
+}
+
+try {
+    Import-MigratorModules
+} catch {
+    Show-BrokenCopy -Problems $copyProblems -Reason $_.Exception.Message
+    exit 1
+}
 
 $isAdmin = Test-IsAdmin
 
@@ -93,10 +165,12 @@ function Select-Language {
 
 # The copy checks itself against files.sha256 and, once a day, looks for a
 # newer release; after an update a new Migrator is started and this one closes.
-try {
-    if (Invoke-StartupCheck) { return }
-} catch {
-    Write-Warn $_.Exception.Message
+if (-not $startupChecked) {
+    try {
+        if (Invoke-StartupCheck) { return }
+    } catch {
+        Write-Warn $_.Exception.Message
+    }
 }
 
 function Open-ProgramUpdate {

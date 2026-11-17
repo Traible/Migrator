@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.1 — 2026-11-17
+
+### Fixed
+
+- **A copy with a missing module said nothing useful.** When a script from `srcib` was missing, Migrator stopped with a raw PowerShell error before its self-check could run. The copy is now compared with `files.sha256` before anything is loaded: the missing files are named, and when the self-check itself is intact it offers to repair the copy from the latest release. If even that is not possible, a plain message says where to download Migrator again.
+- *Restart as Administrator* on the update screen left the old window open. The old window now closes, and the new one opens on the same screen and then stays in Migrator.
+
 ## 2.5.0 — 2026-11-17
 
 ### Added

@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Sel
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.5.0') 'Tool version is 2.5.0'
+Assert-True ([string]$config.ToolVersion -eq '2.5.1') 'Tool version is 2.5.1'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -392,7 +392,32 @@ try {
     Assert-True ($release -and $release.Version -eq '9.9.9' -and $release.ZipUrl -eq ($base + 'Migrator-9.9.9.zip') -and $null -eq (ConvertFrom-ReleaseData -Data $foreignData)) 'New version: only files from this repository''s own releases are accepted'
     Assert-True ((Test-NewerVersion -Candidate '2.10.0' -Current '2.9.1') -and -not (Test-NewerVersion -Candidate '2.5.0' -Current '2.5.0') -and -not (Test-NewerVersion -Candidate 'latest' -Current '2.5.0')) 'New version: versions are compared as numbers'
     Assert-True ((Test-Path -LiteralPath (Join-Path $toolRoot 'files.sha256')) -or $null -eq (Get-UpdateNotice)) 'New version: a development checkout is never offered an update'
+
+    # A copy with a module missing must say so instead of stopping with a
+    # raw PowerShell error. The check runs before the modules are loaded.
+    $brokenCopy = Join-Path $selfDir 'broken copy'
+    New-Item -ItemType Directory -Force -Path $brokenCopy | Out-Null
+    Copy-Item -LiteralPath (Join-Path $toolRoot 'src') -Destination $brokenCopy -Recurse
+    Copy-Item -LiteralPath (Join-Path $toolRoot 'Migrator.bat') -Destination $brokenCopy
+    Remove-Item -LiteralPath (Join-Path $brokenCopy 'src\config\user.json') -Force -ErrorAction SilentlyContinue
+    [void](New-CopyManifest -Root $brokenCopy)
+    $env:MIGRATOR_TEST_RELEASE_JSON = Join-Path $selfDir 'no-release.json'      # no request to GitHub
+    $env:MIGRATOR_LANG = 'en'
+    $brokenMain = Join-Path $brokenCopy 'src\main.ps1'
+
+    Remove-Item -LiteralPath (Join-Path $brokenCopy 'src\lib\Migrator.Browsers.psm1')
+    $out = @('' | & $pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $brokenMain 2>&1 | ForEach-Object { [string]$_ })
+    $text = $out -join "`n"
+    Assert-True ($LASTEXITCODE -eq 1 -and $text -match 'files missing: 1' -and $text -match 'cannot start' -and $text -match 'Migrator\.Browsers\.psm1' -and
+        $text -notmatch 'CategoryInfo|FullyQualifiedErrorId') 'A copy with a missing module names the file and where to download Migrator, without a raw error'
+
+    Remove-Item -LiteralPath (Join-Path $brokenCopy 'src\lib\Migrator.UI.psm1')
+    $out = @('' | & $pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File $brokenMain 2>&1 | ForEach-Object { [string]$_ })
+    $text = $out -join "`n"
+    Assert-True ($LASTEXITCODE -eq 1 -and $text -match 'cannot start' -and $text -match 'Migrator\.UI\.psm1' -and $text -match 'releases/latest' -and
+        $text -notmatch 'CategoryInfo|FullyQualifiedErrorId') 'A copy without the interface module still explains itself in plain text'
 } finally {
+    Remove-Item Env:MIGRATOR_TEST_RELEASE_JSON -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $selfDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
