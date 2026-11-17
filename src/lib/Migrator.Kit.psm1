@@ -14,8 +14,8 @@ Set-StrictMode -Version Latest
 
 $script:KitFolderName = 'Migrator'
 $script:KitFiles = @(
-    'src', 'tests', 'build'
-    'Migrator.bat', 'Get Tools.bat', 'Get-Tools.ps1', 'System Restore Tools.bat'
+    'src'
+    'Migrator.bat'
     'README.md', 'README.ru.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY.md'
     'files.sha256'
 )
@@ -137,7 +137,7 @@ function New-RestoreKit {
     $pwshTarget = Join-Path $kit 'Tools\pwsh'
     if (-not (Test-Path -LiteralPath (Join-Path $pwshTarget 'pwsh.exe') -PathType Leaf)) {
         if ($ToolSource -eq 'Download') {
-            $getTools = Join-Path $kit 'Get-Tools.ps1'
+            $getTools = Join-Path $kit 'src\Get-Tools.ps1'
             & (Get-Process -Id $PID).Path -NoLogo -NoProfile -ExecutionPolicy Bypass -File $getTools -Portable -Yes | Out-Host
         } elseif (-not $PSHOME.TrimEnd('\').Equals($pwshTarget, [StringComparison]::OrdinalIgnoreCase)) {
             [void](Copy-KitFolder -Source $PSHOME -Target $pwshTarget)
@@ -168,7 +168,7 @@ function Request-Archiver {
     # Returns the path of 7-Zip, or $null. When 7-Zip is missing and the run
     # is interactive, explains what would be installed and offers to install
     # it with winget right here, so the user does not have to leave Migrator
-    # and start "Get Tools.bat". Nothing is installed without a typed "y".
+    # and start "src\Get Tools.bat". Nothing is installed without a typed "y".
     [CmdletBinding()]
     param([switch]$Interactive)
 
@@ -209,7 +209,7 @@ function Request-Archiver {
     # 2. A portable copy in the Migrator folder: no winget and no
     #    administrator rights needed, nothing is installed in Windows.
     #    Get-Tools.ps1 downloads the official package and checks its SHA256.
-    $getTools = Join-Path (Get-MigratorRoot) 'Get-Tools.ps1'
+    $getTools = Join-Path (Get-MigratorRoot) 'src\Get-Tools.ps1'
     if (Test-Path -LiteralPath $getTools -PathType Leaf) {
         Write-Host ''
         Write-Solution (T 'tools.7zip.solution_portable')

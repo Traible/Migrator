@@ -2,7 +2,7 @@
 
 Migrator itself is licensed under the MIT License (see `LICENSE`).
 The repository contains **no third-party binaries**. The programs below are
-used at run time and are installed separately (`Get Tools.bat`).
+used at run time and are installed separately (by `Migrator.bat`, after your confirmation, or with `src\Get Tools.bat`).
 
 | Program | Used for | License | Source |
 |---|---|---|---|

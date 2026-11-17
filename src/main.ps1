@@ -232,7 +232,7 @@ while ($true) {
                 Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$backupRoot`""
             }
             'system' {
-                $launcher = Join-Path $toolRoot 'System Restore Tools.bat'
+                $launcher = Join-Path $toolRoot 'src\System Restore Tools.bat'
                 if (Test-Path -LiteralPath $launcher) {
                     Start-Process -FilePath $launcher -WorkingDirectory $toolRoot
                 } else {

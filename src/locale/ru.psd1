@@ -110,7 +110,7 @@
     'exit.255' = 'Остановлено пользователем'
     'exit.other' = 'Ошибка 7-Zip {0}'
     'error.archiver_missing' = '7-Zip не найден: {0}'
-    'error.archiver_not_found' = '7-Zip (7z.exe) не найден. Запустите "Get Tools.bat" или установите 7-Zip с https://www.7-zip.org'
+    'error.archiver_not_found' = '7-Zip (7z.exe) не найден. Запустите Migrator.bat, он предложит его получить, или установите 7-Zip с https://www.7-zip.org'
     'error.no_profiles' = 'Профили пользователей не найдены.'
     'error.profile_not_found' = 'Профиль пользователя "{0}" не найден. Доступны: {1}'
 
@@ -139,7 +139,7 @@
     'm.tools.missing' = 'не найден'
     'm.tools.ready' = 'Всё необходимое на месте.'
     'm.tools.how_to_get' = 'Для создания и восстановления архивов нужен 7-Zip.'
-    'm.tools.get_tools' = 'Запустите "Get Tools.bat" в папке Migrator или установите 7-Zip с https://www.7-zip.org'
+    'm.tools.get_tools' = 'Запустите "Get Tools.bat" в папке src внутри Migrator или установите 7-Zip с https://www.7-zip.org'
     'tools.7zip.missing' = '7-Zip не установлен. Он нужен Migrator для создания и восстановления архивов.'
     'tools.7zip.about' = 'Бесплатный архиватор Игоря Павлова, лицензия GNU LGPL, https://www.7-zip.org'
     'tools.7zip.solution_winget' = 'Установить 7-Zip в Windows через winget, менеджер пакетов Windows.'

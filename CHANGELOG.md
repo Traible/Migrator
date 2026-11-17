@@ -7,6 +7,11 @@
 - **A copy with a missing module said nothing useful.** When a script from `srcib` was missing, Migrator stopped with a raw PowerShell error before its self-check could run. The copy is now compared with `files.sha256` before anything is loaded: the missing files are named, and when the self-check itself is intact it offers to repair the copy from the latest release. If even that is not possible, a plain message says where to download Migrator again.
 - *Restart as Administrator* on the update screen left the old window open. The old window now closes, and the new one opens on the same screen and then stays in Migrator.
 
+### Changed
+
+- **One file to start.** The Migrator folder used to hold three `.bat` files and a script next to each other. `Get Tools.bat`, `Get-Tools.ps1` and `System Restore Tools.bat` moved into `src\`; `Migrator.bat` is now the only thing to run. Nothing is lost: `Migrator.bat` offers to get the missing programs itself, the recovery tools open from the menu, and `"src\Get Tools.bat" -Portable` still fills `Tools\`.
+- A release archive no longer contains `tests\` and `build\`: they are in the repository for those who need them. After an update from 2.5.0 the emptied folders are removed.
+
 ## 2.5.0 — 2026-11-17
 
 ### Added

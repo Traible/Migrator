@@ -110,7 +110,7 @@
     'exit.255' = 'Stopped by the user'
     'exit.other' = '7-Zip error {0}'
     'error.archiver_missing' = '7-Zip was not found at: {0}'
-    'error.archiver_not_found' = '7-Zip (7z.exe) was not found. Run "Get Tools.bat" or install 7-Zip from https://www.7-zip.org'
+    'error.archiver_not_found' = '7-Zip (7z.exe) was not found. Start Migrator.bat, which offers to get it, or install 7-Zip from https://www.7-zip.org'
     'error.no_profiles' = 'No user profiles were found.'
     'error.profile_not_found' = 'User profile "{0}" was not found. Available: {1}'
 
@@ -139,7 +139,7 @@
     'm.tools.missing' = 'not found'
     'm.tools.ready' = 'Everything needed is in place.'
     'm.tools.how_to_get' = '7-Zip is required to create and restore archives.'
-    'm.tools.get_tools' = 'Run "Get Tools.bat" in the Migrator folder, or install 7-Zip from https://www.7-zip.org'
+    'm.tools.get_tools' = 'Run "Get Tools.bat" in the src folder of Migrator, or install 7-Zip from https://www.7-zip.org'
     'tools.7zip.missing' = '7-Zip is not installed. Migrator needs it to create and restore archives.'
     'tools.7zip.about' = 'Free archiver by Igor Pavlov, GNU LGPL license, https://www.7-zip.org'
     'tools.7zip.solution_winget' = 'Install 7-Zip in Windows with winget, the Windows package manager.'

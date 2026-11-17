@@ -89,6 +89,14 @@ function Test-MigratorCopy {
     }
 }
 
+function Remove-EmptyFolder {
+    # Removes the folder when nothing but empty folders is left in it.
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return }
+    if (@(Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue).Count -gt 0) { return }
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function ConvertFrom-ReleaseData {
     # Version and download addresses from the GitHub "latest release" answer.
     # Only files of this repository's own releases are accepted.
@@ -232,6 +240,13 @@ function Install-MigratorRelease {
                 $stale = Join-Path $target $relative
                 if (Test-Path -LiteralPath $stale -PathType Leaf) { Remove-Item -LiteralPath $stale -Force -ErrorAction SilentlyContinue; $removed++ }
             }
+            # Folders the new version no longer has: only when they are empty now.
+            foreach ($folder in @($oldEntries.Keys | ForEach-Object { $_.Split([char]92)[0] } | Sort-Object -Unique)) {
+                if (@($newEntries.Keys | Where-Object { $_.StartsWith("$folder\", [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0 -and
+                    @($script:UncheckedPrefixes | Where-Object { $_.TrimEnd('\') -eq $folder }).Count -eq 0) {
+                    Remove-EmptyFolder -Path (Join-Path $target $folder)
+                }
+            }
         }
         return [pscustomobject]@{ Copied = $newEntries.Count; Removed = $removed }
     } finally {
@@ -268,6 +283,10 @@ function Invoke-StartupCheck {
     $root = Get-MigratorRoot
     $copy = Test-MigratorCopy -Root $root
     if (-not $copy.HasManifest) { return $false }        # development checkout
+
+    # Since 2.5.1 a release has no tests\ and build\ folders. An update made
+    # by 2.5.0 removes their files and leaves the empty folders behind.
+    foreach ($folder in 'tests', 'build') { Remove-EmptyFolder -Path (Join-Path $root $folder) }
 
     $current = [string](Get-MigratorConfig).ToolVersion
     $damaged = -not $copy.Ok

@@ -58,18 +58,22 @@ same, another or a brand-new account.
   remaining time.
 - **Scriptable.** Every step has a command-line switch for unattended runs.
 - **No bundled binaries.** MIT-licensed scripts; 7-Zip and PowerShell 7 are
-  installed separately by `Get Tools.bat`.
+  obtained separately, by Migrator itself and only after you type `y`.
 
 ## Quick start
 
 1. Download the repository (or a release archive) and unpack it, for example
    to an external drive.
-2. Run **`Get Tools.bat`** once. It finds PowerShell 7 and 7-Zip or offers to
-   install them with `winget` or, without winget, to download portable copies
-   into the Migrator folder; nothing happens until you type `y` for each program. `"Get Tools.bat" -Portable` puts portable copies into
-   `Tools\`, so the folder works on any PC from a USB drive.
-3. Run **`Migrator.bat`** and choose *Back up a user profile*.
+2. Run **`Migrator.bat`** - the only file to start in the folder. If
+   PowerShell 7 or 7-Zip is missing, it offers to install them with `winget`
+   or, without winget, to download portable copies into the Migrator folder;
+   nothing happens until you type `y` for each program.
+3. Choose *Back up a user profile*.
 4. On the new PC run `Migrator.bat` and choose *Restore a user profile*.
+
+Everything else lives in `src\`, including `src\Get Tools.bat`:
+`"src\Get Tools.bat" -Portable` puts portable copies of both programs into
+`Tools\`, so the folder works on any PC from a USB drive.
 
 To back up or restore **another** user's profile, start Migrator as
 Administrator (menu item *Restart as Administrator*).
@@ -290,7 +294,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 179 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 180 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

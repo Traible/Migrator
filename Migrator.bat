@@ -43,7 +43,7 @@ goto :DECLINED
 
 :INSTALL
 REM No -Yes here: Get-Tools.ps1 asks about every program on its own.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%BASE%Get-Tools.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%BASE%src\Get-Tools.ps1"
 call :FIND_PWSH
 if defined PWSH goto :RUN
 

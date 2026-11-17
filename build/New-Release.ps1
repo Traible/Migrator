@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Migrator-<version>.zip           scripts only (needs PowerShell 7 and 7-Zip on the PC)
-    Migrator-<version>-portable.zip  scripts + Tools\ (run "Get Tools.bat -Portable" first)
+    Migrator-<version>-portable.zip  scripts + Tools\ (run "src\Get Tools.bat -Portable" first)
 
     The portable archive may contain only software that can be redistributed:
     7-Zip (GNU LGPL, with its License.txt) and PowerShell (MIT). The script
@@ -34,9 +34,11 @@ Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 $include = @(
-    'src', 'tests', 'build'
-    'Migrator.bat', 'Get Tools.bat', 'Get-Tools.ps1'
-    'System Restore Tools.bat'
+    # The folder a user opens holds one file to start, Migrator.bat; the
+    # helper launchers live in src\. Tests and the build script stay in the
+    # repository: a user has no use for them.
+    'src'
+    'Migrator.bat'
     'README.md', 'README.ru.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY.md'
 )
 foreach ($name in $include) {
@@ -73,10 +75,10 @@ if ($Portable) {
     }
     if (-not (Test-Path -LiteralPath (Join-Path $tools '7-Zip\7z.exe')) -or
         -not (Test-Path -LiteralPath (Join-Path $tools '7-Zip\License.txt'))) {
-        throw 'Tools\7-Zip is incomplete (7z.exe and License.txt are required). Run "Get Tools.bat" -Portable.'
+        throw 'Tools\7-Zip is incomplete (7z.exe and License.txt are required). Run "src\Get Tools.bat" -Portable.'
     }
     if (-not (Test-Path -LiteralPath (Join-Path $tools 'pwsh\pwsh.exe'))) {
-        throw 'Tools\pwsh is missing. Run "Get Tools.bat" -Portable.'
+        throw 'Tools\pwsh is missing. Run "src\Get Tools.bat" -Portable.'
     }
     if (Get-ChildItem -LiteralPath $tools -Recurse -File -Include '*.key' -ErrorAction SilentlyContinue) {
         throw 'A license key file was found in Tools\. It must never be published.'

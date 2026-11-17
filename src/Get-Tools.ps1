@@ -17,9 +17,9 @@
         checks that pwsh.exe carries a valid Microsoft signature.
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File Get-Tools.ps1
+    powershell -ExecutionPolicy Bypass -File src\Get-Tools.ps1
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File Get-Tools.ps1 -Portable
+    powershell -ExecutionPolicy Bypass -File src\Get-Tools.ps1 -Portable
 #>
 [CmdletBinding()]
 param(
@@ -41,7 +41,8 @@ $SevenZipPackages = @{
     x64 = @{ File = '7z2606-x64.msi'; Sha256 = '6DC822569E777D9A3ECD5FFCBC22B55600AF87E6C5D9810A64E8566CF5A4AF9F' }
     x86 = @{ File = '7z2606.msi';     Sha256 = '1B3694F6F1449FB5EE98CBDAE5B3DCCE4A86E7F4929E8543DC28B89B55B89187' }
 }
-$root = $PSScriptRoot
+# The script lives in src\; Tools\ is in the Migrator folder above it.
+$root = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $root 'Tools'
 $sevenZipDir = Join-Path $toolsRoot '7-Zip'
 $pwshDir = Join-Path $toolsRoot 'pwsh'

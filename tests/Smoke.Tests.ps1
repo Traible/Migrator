@@ -168,7 +168,10 @@ try {
 }
 # Batch files: cmd.exe misreads labels and UTF-8 lines in a file with LF-only
 # line endings, so every .bat must use CRLF.
-$badEol = @(Get-ChildItem -LiteralPath $toolRoot -Filter '*.bat' -File | Where-Object {
+$batFiles = @(Get-ChildItem -LiteralPath $toolRoot, (Join-Path $toolRoot 'src') -Filter '*.bat' -File)
+$rootScripts = @(Get-ChildItem -LiteralPath $toolRoot -File | Where-Object { $_.Extension -in '.bat', '.cmd', '.ps1', '.exe', '.lnk' } | ForEach-Object Name)
+Assert-True (($rootScripts -join ',') -eq 'Migrator.bat' -and $batFiles.Count -eq 3) "The Migrator folder has one file to start, Migrator.bat; the helper launchers are in src ($($rootScripts -join ', '))"
+$badEol = @($batFiles | Where-Object {
     $text = [IO.File]::ReadAllText($_.FullName)
     ($text -replace "`r`n", '') -match "[`r`n]"
 } | ForEach-Object Name)
@@ -207,11 +210,11 @@ try {
     Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue
 }
 # Download without winget: the pinned 7-Zip package must be consistent.
-$getToolsText = [IO.File]::ReadAllText((Join-Path $toolRoot 'Get-Tools.ps1'))
+$getToolsText = [IO.File]::ReadAllText((Join-Path $toolRoot 'src\Get-Tools.ps1'))
 $pinVersion = if ($getToolsText -match "\`$SevenZipVersion = '(\d+)\.(\d+)'") { $Matches[1] + $Matches[2] } else { '' }
 $pins = [regex]::Matches($getToolsText, "File = '(7z(\d+)[^']*\.msi)';\s*Sha256 = '([0-9A-Fa-f]+)'")
 Assert-True ($pinVersion -and $pins.Count -eq 2 -and @($pins | Where-Object { $_.Groups[2].Value -ne $pinVersion -or $_.Groups[3].Value.Length -ne 64 }).Count -eq 0) 'Pinned 7-Zip packages match the pinned version and carry full SHA256 values'
-$sevenZipOnly = @('' | powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $toolRoot 'Get-Tools.ps1') -SevenZipOnly 2>&1 | ForEach-Object { [string]$_ })
+$sevenZipOnly = @('' | powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $toolRoot 'src\Get-Tools.ps1') -SevenZipOnly 2>&1 | ForEach-Object { [string]$_ })
 Assert-True ($LASTEXITCODE -eq 0 -and -not [bool]($sevenZipOnly -match 'Download')) 'Get-Tools -SevenZipOnly does nothing when 7-Zip is already there'
 
 # Started from inside the ZIP: only the .bat is there, without its files.
@@ -343,11 +346,11 @@ function New-TestTree([string]$Root, [hashtable]$Files) {
 }
 try {
     $installed = Join-Path $selfDir 'installed'
-    New-TestTree $installed @{ 'Migrator.bat' = 'bat v1'; 'src\main.ps1' = 'main v1'; 'src\lib\Old.psm1' = 'gone in v2'; 'README.md' = 'readme v1' }
+    New-TestTree $installed @{ 'Migrator.bat' = 'bat v1'; 'src\main.ps1' = 'main v1'; 'src\lib\Old.psm1' = 'gone in v2'; 'tests\Old.Tests.ps1' = 'not shipped any more'; 'README.md' = 'readme v1' }
     New-TestTree $installed @{ 'src\config\user.json' = '{"Language":"ru"}'; 'Tools\pwsh\pwsh.exe' = 'tool'; 'Logs\run.log' = 'log' }
     $listed = New-CopyManifest -Root $installed
     Set-Content -LiteralPath (Join-Path $installed 'src\config\user.json') -Value '{"Language":"en"}' -NoNewline
-    Assert-True ($listed -eq 4 -and (Test-MigratorCopy -Root $installed).Ok) 'Copy check: the file list covers the scripts; settings, tools and logs are free to change'
+    Assert-True ($listed -eq 5 -and (Test-MigratorCopy -Root $installed).Ok) 'Copy check: the file list covers the scripts; settings, tools and logs are free to change'
     Assert-True (-not (Test-MigratorCopy -Root (Join-Path $installed 'src')).HasManifest) 'Copy check: a folder without the list (a development checkout) is not checked'
 
     $package = Join-Path $selfDir 'package\Migrator-9.9.9'
@@ -363,7 +366,7 @@ try {
 
     $applied = Install-MigratorRelease -Root $installed -ZipPath $zip -Sha256 $zipHash.ToLower()
     Assert-True ((Get-Content -LiteralPath (Join-Path $installed 'src\main.ps1') -Raw) -eq 'main v2' -and (Test-Path -LiteralPath (Join-Path $installed 'src\lib\New.psm1')) -and
-        -not (Test-Path -LiteralPath (Join-Path $installed 'src\lib\Old.psm1')) -and $applied.Removed -eq 1 -and (Test-MigratorCopy -Root $installed).Ok) 'Self-update: new files replace the old ones, files the new version dropped are removed'
+        -not (Test-Path -LiteralPath (Join-Path $installed 'src\lib\Old.psm1')) -and -not (Test-Path -LiteralPath (Join-Path $installed 'tests')) -and $applied.Removed -eq 2 -and (Test-MigratorCopy -Root $installed).Ok) 'Self-update: new files replace the old ones; files and emptied folders the new version dropped are removed'
     Assert-True ((Get-Content -LiteralPath (Join-Path $installed 'src\config\user.json') -Raw) -eq '{"Language":"en"}' -and
         (Test-Path -LiteralPath (Join-Path $installed 'Tools\pwsh\pwsh.exe')) -and (Test-Path -LiteralPath (Join-Path $installed 'Logs\run.log'))) 'Self-update: settings, tools and logs are kept'
 

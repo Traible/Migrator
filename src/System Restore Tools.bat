@@ -45,6 +45,6 @@ start "" control.exe /name Microsoft.Recovery
 goto :MAIN
 
 :BACKUPS
-if not exist "%~dp0Backups" mkdir "%~dp0Backups"
-start "" explorer.exe "%~dp0Backups"
+if not exist "%~dp0..\Backups" mkdir "%~dp0..\Backups"
+start "" explorer.exe "%~dp0..\Backups"
 goto :MAIN
