@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.4.0') 'Tool version is 2.4.0'
+Assert-True ([string]$config.ToolVersion -eq '2.5.0') 'Tool version is 2.5.0'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -292,7 +292,42 @@ try {
     Assert-True ([bool]($shown -match '5 can be installed with winget') -and $listText -match 'Mozilla\.Firefox' -and $listText -match 'Some Tool') 'Restore writes the saved program list to a file and says where it is'
     $none = @(Invoke-ProgramRestore -Manifest @{ sourceUser = 'alex' } -ListPath (Join-Path $programDir 'none.txt') 6>&1)
     Assert-True ($none.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $programDir 'none.txt'))) 'An archive without a program list (older versions) adds nothing to the restore'
+
+    # Updates: the table winget prints is read row by row from the right.
+    $upgradeText = @(
+        'Имя                             ИД                     Версия      Доступно'
+        '------------------------------------------------------------------------------'
+        'Git                             Git.Git                2.54.0      2.56.0.4'
+        'Unity 6000.4.5f1                Unity.Unity.6000       6000.4.5f1  6000.6.8f1'
+        'Some Very Long Program Name th… Vendor.LongName        < 2.0       2.5'
+        'Mozilla Firefox (x64 ru)        Mozilla.Firefox.ru     130.0       131.0.2'
+        '4 upgrades available.'
+        '2 package(s) have version numbers that cannot be determined. Use --include-unknown to see all results.'
+    ) -join "`r`n"
+    $rows = @(ConvertFrom-WingetUpgradeText -Text $upgradeText)
+    $rowText = @($rows | ForEach-Object { '{0}|{1}|{2}' -f $_.Id, $_.Version, $_.Available }) -join ' '
+    Assert-True ($rowText -eq 'Git.Git|2.54.0|2.56.0.4 Unity.Unity.6000|6000.4.5f1|6000.6.8f1 Vendor.LongName|< 2.0|2.5 Mozilla.Firefox.ru|130.0|131.0.2' -and $rows[1].Name -eq 'Unity 6000.4.5f1') "Update list: rows of the winget table are read, the footer is not ($rowText)"
+    Assert-True (@(ConvertFrom-WingetUpgradeText -Text "No installed package found matching input criteria.`r`n").Count -eq 0 -and @(ConvertFrom-WingetUpgradeText -Text '').Count -eq 0) 'Update list: no table means nothing to update'
+
+    $upgradeFile = Join-Path $programDir 'upgrade.txt'
+    [IO.File]::WriteAllText($upgradeFile, $upgradeText, [Text.UTF8Encoding]::new($false))
+    $env:MIGRATOR_TEST_WINGET_UPGRADE = $upgradeFile
+    $upgrades = Get-WingetUpgrades
+    $recommendedIds = @(@($upgrades) | Where-Object Recommended | ForEach-Object Id) -join ','
+    Assert-True (@($upgrades).Count -eq 4 -and $recommendedIds -eq 'Git.Git,Mozilla.Firefox.ru') "Update list: everyday programs are recommended; Unity and unknown programs are not ($recommendedIds)"
+
+    $updateScript = Join-Path $toolRoot 'src\update.ps1'
+    $listed = Invoke-Script $updateScript @('-ListOnly', '-NonInteractive')
+    $listedText = $listed.Output -join "`n"
+    Assert-True ($listed.ExitCode -eq 0 -and $listedText -match 'Recommended \(2\)' -and $listedText -match 'Other \(2\)' -and
+        $listedText.IndexOf('Unity.Unity.6000') -gt $listedText.IndexOf('Other (2)')) 'update.ps1 -ListOnly shows the recommended and the other updates and installs nothing'
+    $noScope = Invoke-Script $updateScript @('-NonInteractive')
+    Assert-True ($noScope.ExitCode -ne 0 -and [bool]($noScope.Output -match '-Scope')) 'update.ps1 updates nothing in a non-interactive run without -Scope'
+    $env:MIGRATOR_TEST_WINGET_UPGRADE = Join-Path $programDir 'missing.txt'
+    $noWinget = Invoke-Script $updateScript @('-ListOnly', '-NonInteractive')
+    Assert-True ($noWinget.ExitCode -eq 1 -and [bool]($noWinget.Output -match 'not available')) 'update.ps1 explains that winget is missing'
 } finally {
+    Remove-Item Env:MIGRATOR_TEST_WINGET_UPGRADE -ErrorAction SilentlyContinue
     Remove-Item Env:MIGRATOR_TEST_WINGET_EXPORT -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $programDir -Recurse -Force -ErrorAction SilentlyContinue
 }

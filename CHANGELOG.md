@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0 — 2026-11-17
+
+### Added
+
+- **Update installed programs** (main menu, `src\update.ps1`). Migrator asks `winget` which installed programs have a newer version and shows them in two groups: *recommended* (everyday programs that update without surprises: browsers, messengers, players, archivers, utilities, runtimes) and *other* (development tools and engines such as Unity, Visual Studio, SDKs, Node.js, and everything Migrator does not know). Three ways to go on:
+  - *Recommended only*;
+  - *Choose from the list*: check marks, the recommended ones ticked;
+  - *Everything*.
+  Nothing is updated without a typed `y`; programs are updated one by one and the ones that failed are named at the end. The recommended set is the `UpdateRecommended` setting. Unattended: `update.ps1 -Scope Recommended|All -NonInteractive`; `-ListOnly` only shows the list. Drivers are not touched.
+
 ## 2.4.0 — 2026-11-17
 
 ### Added

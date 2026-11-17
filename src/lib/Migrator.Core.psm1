@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.4.0'
+        ToolVersion         = '2.5.0'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
@@ -166,6 +166,48 @@ function Get-DefaultConfig {
             'Apple.Bonjour*'
             'Apple.AppleSoftwareUpdate'
             'EpicGames.EpicOnlineServices'
+        )
+        # "Update installed programs", the recommended set: everyday programs
+        # whose new versions do not change how the user's work is done.
+        # Left out on purpose: development tools and engines (Unity, Visual
+        # Studio, SDKs, Node.js, Python), where a new version can break
+        # projects, and hardware utilities.
+        UpdateRecommended = @(
+            # browsers
+            'Google.Chrome*', 'Mozilla.Firefox*', 'Microsoft.Edge', 'Brave.Brave', 'Opera.Opera*', 'Vivaldi.Vivaldi', 'Yandex.Browser'
+            # archivers
+            '7zip.7zip', 'RARLab.WinRAR', 'Giorgiotani.Peazip'
+            # messengers, mail, meetings
+            'Telegram.TelegramDesktop', 'WhatsApp.WhatsApp', 'Discord.Discord', 'Viber.Viber', 'Zoom.Zoom', 'Microsoft.Teams'
+            'SlackTechnologies.Slack', 'Mozilla.Thunderbird*'
+            # players, codecs, media tools
+            'VideoLAN.VLC', 'AIMP.AIMP', 'CodecGuide.K-LiteCodecPack.*', 'clsid2.mpc-hc', 'Daum.PotPlayer', 'Spotify.Spotify'
+            'OBSProject.OBSStudio', 'HandBrake.HandBrake', 'Audacity.Audacity', 'OpenMedia.4KVideoDownloaderPlus'
+            # pictures and documents
+            'IrfanSkiljan.IrfanView', 'XnSoft.XnView*', 'GIMP.GIMP*', 'KDE.Krita', 'Inkscape.Inkscape', 'dotPDN.PaintDotNet'
+            'Adobe.Acrobat.Reader.*', 'SumatraPDF.SumatraPDF', 'Foxit.FoxitReader', 'TheDocumentFoundation.LibreOffice'
+            'Notepad++.Notepad++', 'Obsidian.Obsidian', 'Notion.Notion'
+            # utilities
+            'voidtools.Everything', 'Microsoft.PowerToys', 'Microsoft.WindowsTerminal', 'Microsoft.PowerShell'
+            'Greenshot.Greenshot', 'ShareX.ShareX', 'Skillbrains.Lightshot', 'qBittorrent.qBittorrent'
+            'WinSCP.WinSCP', 'PuTTY.PuTTY', 'WinMerge.WinMerge', 'RevoUninstaller.RevoUninstaller'
+            'WinDirStat.WinDirStat', 'AntibodySoftware.WizTree', 'Rufus.Rufus', 'Balena.Etcher'
+            'REALiX.HWiNFO', 'CPUID.CPU-Z', 'CPUID.HWMonitor', 'TechPowerUp.GPU-Z', 'CrystalDewWorld.CrystalDisk*'
+            'Futuremark.FuturemarkSystemInfo'
+            # remote access, passwords, cloud
+            'TeamViewer.TeamViewer', 'AnyDeskSoftwareGmbH.AnyDesk', 'Tailscale.Tailscale', 'Google.ChromeRemoteDesktopHost'
+            'LizardByte.Sunshine', 'Iriun.IriunWebcam'
+            'Bitwarden.Bitwarden', 'KeePassXCTeam.KeePassXC', 'DominikReichl.KeePass'
+            'Dropbox.Dropbox', 'Google.GoogleDrive', 'Microsoft.OneDrive'
+            # game launchers
+            'Valve.Steam', 'EpicGames.EpicGamesLauncher', 'EpicGames.EpicOnlineServices', 'Blizzard.BattleNet', 'GOG.Galaxy', 'Ubisoft.Connect'
+            # tools that keep their commands and files compatible
+            'Git.Git', 'GitHub.cli', 'GitHub.GitHubDesktop', 'Microsoft.VisualStudioCode', 'Anthropic.Claude'
+            # runtimes: the id carries the major version, so an update stays within it
+            'Microsoft.VCRedist.*', 'Microsoft.VCLibs.*', 'Microsoft.UI.Xaml.*', 'Microsoft.WindowsAppRuntime.*'
+            'Microsoft.DotNet.Runtime.*', 'Microsoft.DotNet.DesktopRuntime.*', 'Microsoft.DotNet.AspNetCore.*'
+            'Microsoft.EdgeWebView2Runtime', 'Microsoft.AppInstaller', 'Microsoft.XNARedist', 'Microsoft.msodbcsql.*'
+            'Oracle.JavaRuntimeEnvironment', 'Apple.Bonjour*', 'Apple.AppleSoftwareUpdate'
         )
         # Shown without a tick: utilities tied to the hardware of the old PC,
         # trial antiviruses and "optimizers" that usually arrive uninvited.

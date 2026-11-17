@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.4.0
+  Migrator  v2.5.0
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -52,6 +52,8 @@ same, another or a brand-new account.
   account; from an archive or directly from `Windows.old`.
 - **Brings the programs back.** The list of installed programs is saved with
   the backup; after the restore you tick what to install again with `winget`.
+- **Updates the installed programs.** New versions through `winget`: the
+  recommended everyday programs, the ones you tick, or everything.
 - **English and Russian interface**, arrow-key menus, progress with speed and
   remaining time.
 - **Scriptable.** Every step has a command-line switch for unattended runs.
@@ -159,6 +161,25 @@ start. Paid programs are installed too, but ask for their license again.
 Both lists are settings (`ProgramsHidden`, `ProgramsUnchecked`); a backup made
 with `-NoProgramList` saves no list.
 
+## Updating programs
+
+Menu item *Update installed programs* asks `winget` which installed programs
+have a newer version and shows them in two groups:
+
+- **Recommended** - everyday programs that update without surprises:
+  browsers, messengers, players, archivers, utilities, runtimes;
+- **Other** - development tools and engines (Unity, Visual Studio, SDKs,
+  Node.js, Python) and everything Migrator does not know, where a new
+  version can change how things work.
+
+Then you choose: *Recommended only*, *Choose from the list* (check marks,
+recommended ones ticked) or *Everything*. Nothing is updated without a typed
+`y`. Programs are updated one by one; the ones that failed are named at the
+end. The recommended set is a setting, `UpdateRecommended`.
+
+Only programs `winget` knows are updated, and `winget` must be present
+(it is not in Windows Sandbox or LTSC). Drivers are not touched.
+
 ## Command line
 
 ```bat
@@ -177,6 +198,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 |---|---|
 | `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-RestoreKit None\|Copy\|Download`, `-NoProgramList`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
 | `restore.ps1` | `-Method Archive\|WindowsOld`, `-Archive`, `-SourceUser`, `-TargetUser`, `-TargetPath`, `-CreateUser`, `-Verify`, `-NoVerify`, `-Force`, `-NonInteractive` |
+| `update.ps1` | `-Scope Recommended\|All`, `-ListOnly`, `-NonInteractive` |
 | `main.ps1` | `-Language en\|ru\|auto` |
 
 Exit code is `0` on success (including "completed with warnings") and non-zero
@@ -210,6 +232,7 @@ Keep the `.manifest.json` next to the archive: the restore uses it.
 | `CloudFolderPolicy` | `Auto` | `Auto`, `Exclude`, `Include` |
 | `ExcludeDevCaches` | `false` | also exclude developer caches in Full mode |
 | `ExtraExcludes` | `[]` | your own masks, see below |
+| `UpdateRecommended` | everyday programs | winget package ids (wildcards) updated by *Recommended only* |
 | `ProgramsHidden` | runtimes | winget package ids (wildcards) never offered after a restore |
 | `ProgramsUnchecked` | hardware utilities, trial antiviruses | package ids offered without a tick |
 | `ArchiverPath` | `Tools\7-Zip\7z.exe` | checked first; an installed 7-Zip is found automatically |
@@ -242,7 +265,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 158 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 165 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

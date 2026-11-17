@@ -160,7 +160,11 @@ function Install-WingetPrograms {
     # Installs the packages one by one, so one failure does not stop the rest
     # and every program gets its own line in the result.
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string[]]$Ids, [scriptblock]$Log)
+    param(
+        [Parameter(Mandatory)][string[]]$Ids,
+        [ValidateSet('install', 'upgrade')][string]$Verb = 'install',
+        [scriptblock]$Log
+    )
 
     $winget = Get-WingetPath
     $failed = [System.Collections.Generic.List[string]]::new()
@@ -171,7 +175,7 @@ function Install-WingetPrograms {
         Write-Text (T 'p.installing' $number $Ids.Count $id)
         # A separate process attached to this console: winget draws its own progress.
         $process = Start-Process -FilePath $winget -NoNewWindow -PassThru -ArgumentList @(
-            'install', '--id', $id, '--exact', '--source', 'winget',
+            $Verb, '--id', $id, '--exact', '--source', 'winget',
             '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
         )
         $process.WaitForExit()
@@ -179,7 +183,7 @@ function Install-WingetPrograms {
         # 0x8A15002B: already installed and nothing newer to install.
         $ok = ($code -eq 0 -or $code -eq -1978335189)
         if (-not $ok) {
-            Write-Warn (T 'p.failed_one' $id $code)
+            Write-Warn $(if ($Verb -eq 'upgrade') { T 'u.failed_one' $id $code } else { T 'p.failed_one' $id $code })
             $failed.Add($id)
         }
         if ($Log) { & $Log "Program $id`: winget exit $code" }
@@ -262,7 +266,187 @@ function Invoke-ProgramRestore {
     if ($Log) { & $Log "Programs installed: $($result.Installed) of $($picked.Count); failed: $($result.Failed -join ', ')" }
 }
 
+# ---------------------------------------------------------------------------
+# Updates of the installed programs
+# ---------------------------------------------------------------------------
+
+function ConvertFrom-WingetUpgradeText {
+    # Rows of the table "winget upgrade --source winget" prints:
+    #   Name ... Id  Version  Available
+    #   -----------------------------------
+    #   Git      Git.Git  2.54.0  2.56.0.4
+    #   23 upgrades available.
+    # winget has no machine-readable output for this list. Every row is read
+    # from the right (available, version, id; the rest is the name), which
+    # does not depend on the column positions, the language of the headers or
+    # the width of the letters in a name.
+    [CmdletBinding()]
+    param([AllowEmptyString()][string]$Text = '')
+
+    $lines = @($Text -split "`r?`n")
+    $start = -1
+    for ($i = 1; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^-{20,}\s*$') { $start = $i + 1; break }
+    }
+    $rows = [System.Collections.Generic.List[object]]::new()
+    if ($start -lt 0) { return @() }
+
+    for ($i = $start; $i -lt $lines.Count; $i++) {
+        $tokens = @($lines[$i].Trim() -split '\s+' | Where-Object { $_ })
+        if ($tokens.Count -lt 4) { break }
+        $available = $tokens[-1]
+        $version = $tokens[-2]
+        $idIndex = $tokens.Count - 3
+        # "< 2.0": the installed version is only known to be older than this.
+        if ($tokens[$idIndex] -in @('<', '>') -and $idIndex -ge 2) { $version = $tokens[$idIndex] + ' ' + $version; $idIndex-- }
+        $id = $tokens[$idIndex]
+        # A package id is "Publisher.Package"; the footer lines are not.
+        if ($idIndex -lt 1 -or $id -notmatch '^[^\s.]+\.\S+$') { break }
+        $rows.Add([pscustomobject]@{
+            Name      = ($tokens[0..($idIndex - 1)] -join ' ')
+            Id        = $id
+            Version   = $version
+            Available = $available
+        })
+    }
+    return @($rows)
+}
+
+function Get-WingetUpgrades {
+    # Programs with a newer version in winget, or $null when winget cannot be
+    # asked. Each one carries Recommended: its id is in the UpdateRecommended
+    # list of everyday programs that update without surprises.
+    # The array comes back as one object: assign the result, do not wrap the
+    # call in @(). MIGRATOR_TEST_WINGET_UPGRADE replaces the call with a saved
+    # output for the tests.
+    [CmdletBinding()]
+    param([int]$TimeoutSeconds = 180)
+
+    $text = $null
+    if ($env:MIGRATOR_TEST_WINGET_UPGRADE) {
+        if (-not (Test-Path -LiteralPath $env:MIGRATOR_TEST_WINGET_UPGRADE -PathType Leaf)) { return $null }
+        $text = [IO.File]::ReadAllText($env:MIGRATOR_TEST_WINGET_UPGRADE, [Text.Encoding]::UTF8)
+    } else {
+        $winget = Get-WingetPath
+        if (-not $winget) { return $null }
+        $base = Join-Path ([IO.Path]::GetTempPath()) ('migrator-programs-{0}-{1}' -f $PID, [guid]::NewGuid().ToString('N'))
+        try {
+            $process = Start-Process -FilePath $winget -NoNewWindow -PassThru `
+                -RedirectStandardOutput "$base.out" -RedirectStandardError "$base.err" -ArgumentList @(
+                    'upgrade', '--source', 'winget', '--accept-source-agreements', '--disable-interactivity'
+                )
+            if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+                try { $process.Kill($true) } catch { }
+                return $null
+            }
+            if (-not (Test-Path -LiteralPath "$base.out" -PathType Leaf)) { return $null }
+            $text = [IO.File]::ReadAllText("$base.out", [Text.Encoding]::UTF8)
+        } catch {
+            return $null
+        } finally {
+            foreach ($extension in 'out', 'err') { Remove-Item -LiteralPath "$base.$extension" -Force -ErrorAction SilentlyContinue }
+        }
+    }
+
+    $masks = (Get-MigratorConfig).UpdateRecommended
+    $found = @(ConvertFrom-WingetUpgradeText -Text $text | ForEach-Object {
+        $_ | Add-Member -NotePropertyName Recommended -NotePropertyValue (Test-ProgramMask -Id $_.Id -Masks $masks) -PassThru
+    } | Sort-Object Id)
+    return , $found
+}
+
+function Invoke-ProgramUpdate {
+    # Shows which installed programs have a newer version and updates:
+    #   Recommended - only the ones from the UpdateRecommended list;
+    #   All         - everything winget offers;
+    #   interactive without -Scope: a menu with both and "choose from the list".
+    # Interactive runs ask for a typed "y" before anything is updated; in a
+    # non-interactive run the -Scope switch is the consent.
+    # Returns $false when winget could not be asked or a program failed.
+    [CmdletBinding()]
+    param(
+        [ValidateSet('', 'Recommended', 'All')][string]$Scope = '',
+        [switch]$ListOnly,
+        [switch]$Interactive
+    )
+
+    Write-Hint (T 'u.checking')
+    $upgrades = Get-WingetUpgrades
+    if ($null -eq $upgrades) {
+        Write-Host ''
+        Write-Warn (T 'u.no_winget')
+        Write-Solution (T 'u.no_winget_solution')
+        return $false
+    }
+    $upgrades = @($upgrades)
+    if ($upgrades.Count -eq 0) { Write-Ok (T 'u.none'); return $true }
+
+    $recommended = @($upgrades | Where-Object { $_.Recommended })
+    $other = @($upgrades | Where-Object { -not $_.Recommended })
+    $idWidth = ($upgrades | ForEach-Object { $_.Id.Length } | Measure-Object -Maximum).Maximum
+    $versionWidth = ($upgrades | ForEach-Object { $_.Version.Length } | Measure-Object -Maximum).Maximum
+    $describe = { param($item) '{0}  {1} -> {2}' -f $item.Id.PadRight($idWidth), $item.Version.PadRight($versionWidth), $item.Available }
+
+    if ($recommended.Count -gt 0) {
+        Write-Host ''
+        Write-Ok (T 'u.recommended_title' $recommended.Count)
+        foreach ($item in $recommended) { Write-Text ('     ' + (& $describe $item)) }
+    }
+    if ($other.Count -gt 0) {
+        Write-Host ''
+        Write-Warn (T 'u.other_title' $other.Count)
+        foreach ($item in $other) { Write-Hint ('     ' + (& $describe $item)) }
+    }
+    if ($ListOnly) { return $true }
+
+    $picked = @()
+    if ($Interactive) {
+        $choice = $Scope
+        if (-not $choice) {
+            $items = [System.Collections.Generic.List[object]]::new()
+            if ($recommended.Count -gt 0) {
+                $items.Add((New-MenuItem -Value 'Recommended' -Label (T 'u.menu.recommended' $recommended.Count) -Hint (T 'u.menu.recommended.hint')))
+            }
+            $items.Add((New-MenuItem -Value 'Choose' -Label (T 'u.menu.choose') -Hint (T 'u.menu.choose.hint')))
+            $items.Add((New-MenuItem -Value 'All' -Label (T 'u.menu.all' $upgrades.Count) -Hint (T 'u.menu.all.hint')))
+            $items.Add((New-MenuItem -Value 'Cancel' -Label (T 'ui.cancel') -Key 'Q'))
+            $choice = Show-Menu -Title (T 'u.menu.title') -Items @($items) -AllowCancel
+        }
+        switch ($choice) {
+            'Recommended' { $picked = @($recommended.Id) }
+            'All'         { $picked = @($upgrades.Id) }
+            'Choose' {
+                $checkItems = @(foreach ($item in @($recommended + $other)) {
+                    New-CheckItem -Value $item.Id -Label (& $describe $item) -Checked ([bool]$item.Recommended)
+                })
+                $ticked = Show-CheckList -Title (T 'u.menu.choose') -Items $checkItems
+                if ($null -ne $ticked) { $picked = @($ticked | ForEach-Object { [string]$_ }) }
+            }
+        }
+        if ($picked.Count -eq 0) { Write-Hint (T 'u.nothing'); return $true }
+        Write-Host ''
+        if (-not (Test-IsAdmin)) { Write-Hint (T 'u.admin_hint') }
+        if (-not (Read-YesNo (T 'u.confirm' $picked.Count) $false)) { Write-Hint (T 'u.nothing'); return $true }
+    } else {
+        $picked = if ($Scope -eq 'All') { @($upgrades.Id) } elseif ($Scope -eq 'Recommended') { @($recommended.Id) } else { @() }
+        if ($picked.Count -eq 0) { Write-Hint (T 'u.nothing'); return $true }
+    }
+
+    $result = Install-WingetPrograms -Ids $picked -Verb upgrade
+    Write-Host ''
+    if ($result.Failed.Count -eq 0) {
+        Write-Ok (T 'u.summary' $result.Installed $picked.Count)
+        return $true
+    }
+    Write-Warn (T 'u.summary' $result.Installed $picked.Count)
+    Write-Solution (T 'u.failed_list' ($result.Failed -join ', '))
+    return $false
+}
+
 Export-ModuleMember -Function @(
+    'ConvertFrom-WingetUpgradeText'
+    'Get-WingetUpgrades'
+    'Invoke-ProgramUpdate'
     'Get-WingetPath'
     'Read-WingetExport'
     'Get-WingetPackageIds'

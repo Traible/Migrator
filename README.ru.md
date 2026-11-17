@@ -11,7 +11,7 @@ Migrator — небольшой инструмент на PowerShell для пе
 восстанавливает их в ту же, другую или новую учётную запись.
 
 ```text
-  Migrator  v2.4.0
+  Migrator  v2.5.0
   ====================================================================
   Резервная копия и восстановление профиля пользователя Windows
 
@@ -53,6 +53,8 @@ Migrator — небольшой инструмент на PowerShell для пе
 - **Возвращает программы.** Список установленных программ сохраняется вместе
   с копией; после восстановления вы отмечаете, что поставить заново через
   `winget`.
+- **Обновляет установленные программы.** Новые версии через `winget`:
+  рекомендуемые повседневные программы, отмеченные вами или все.
 - **Русский и английский интерфейс**, меню на стрелках, прогресс со скоростью
   и оставшимся временем.
 - **Автоматизация.** У каждого шага есть ключ командной строки.
@@ -165,6 +167,28 @@ E:\MigratorBackups\Migrator\Tools\pwsh, Tools\7-Zip
 попросят заново. Оба списка — настройки (`ProgramsHidden`,
 `ProgramsUnchecked`); копия с ключом `-NoProgramList` список не сохраняет.
 
+## Обновление программ
+
+Пункт меню «Обновить установленные программы» спрашивает у `winget`, для
+каких установленных программ есть новая версия, и показывает их двумя
+группами:
+
+- **Рекомендуемые** — повседневные программы, которые обновляются без
+  сюрпризов: браузеры, мессенджеры, плееры, архиваторы, утилиты, служебные
+  компоненты;
+- **Остальные** — средства разработки и движки (Unity, Visual Studio, SDK,
+  Node.js, Python) и всё, чего Migrator не знает: там новая версия может
+  изменить работу.
+
+Дальше выбор: «Только рекомендуемые», «Выбрать из списка» (галочки,
+рекомендуемые отмечены) или «Всё». Без введённого `y` ничего не обновляется.
+Программы обновляются по одной; неудавшиеся перечисляются в конце. Набор
+рекомендуемых — настройка `UpdateRecommended`.
+
+Обновляются только программы, которые знает `winget`, и сам `winget` должен
+быть на компьютере (в Windows Sandbox и LTSC его нет). Драйверы не
+затрагиваются.
+
 ## Командная строка
 
 ```bat
@@ -183,6 +207,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 |---|---|
 | `backup.ps1` | `-User`, `-SourcePath`, `-Mode Full\|Standard`, `-Destination`, `-CloudFolders Auto\|Exclude\|Include`, `-RestoreKit None\|Copy\|Download`, `-NoProgramList`, `-NoVerify`, `-ComputeHash`, `-Force`, `-NonInteractive` |
 | `restore.ps1` | `-Method Archive\|WindowsOld`, `-Archive`, `-SourceUser`, `-TargetUser`, `-TargetPath`, `-CreateUser`, `-Verify`, `-NoVerify`, `-Force`, `-NonInteractive` |
+| `update.ps1` | `-Scope Recommended\|All`, `-ListOnly`, `-NonInteractive` |
 | `main.ps1` | `-Language en\|ru\|auto` |
 
 Код возврата `0` — успех (в том числе «завершено с предупреждениями»),
@@ -216,6 +241,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 | `CloudFolderPolicy` | `Auto` | `Auto`, `Exclude`, `Include` |
 | `ExcludeDevCaches` | `false` | исключать кэши разработчика и в полном режиме |
 | `ExtraExcludes` | `[]` | свои маски, см. ниже |
+| `UpdateRecommended` | повседневные программы | идентификаторы пакетов winget (с масками), которые обновляет «Только рекомендуемые» |
 | `ProgramsHidden` | служебные компоненты | идентификаторы пакетов winget (с масками), которые после восстановления не предлагаются |
 | `ProgramsUnchecked` | утилиты железа, пробные антивирусы | пакеты, которые предлагаются без галочки |
 | `ArchiverPath` | `Tools\7-Zip\7z.exe` | проверяется первым; установленный 7-Zip находится автоматически |
@@ -250,7 +276,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 158 проверок, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 165 проверок, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 

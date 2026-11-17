@@ -111,6 +111,7 @@ while ($true) {
     $items.Add((New-MenuItem -Value 'restore' -Label (T 'm.menu.restore') -Hint (T 'm.menu.restore.hint')))
     $items.Add((New-MenuItem -Value 'folder' -Label (T 'm.menu.folder')))
     $items.Add((New-MenuItem -Value 'system' -Label (T 'm.menu.system')))
+    $items.Add((New-MenuItem -Value 'update' -Label (T 'm.menu.update') -Hint (T 'm.menu.update.hint')))
     $items.Add((New-MenuItem -Value 'tools' -Label (T 'm.menu.tools')))
     $items.Add((New-MenuItem -Value 'language' -Label 'Language / Язык' -Key 'L'))
     $items.Add((New-MenuItem -Value 'about' -Label (T 'm.menu.about') -Key 'H'))
@@ -137,6 +138,7 @@ while ($true) {
                     Wait-Enter
                 }
             }
+            'update'   { & (Join-Path $PSScriptRoot 'update.ps1'); Import-MigratorModules }
             'tools'    { Show-ToolStatus }
             'language' { Select-Language }
             'about'    { Show-About }
