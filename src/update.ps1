@@ -29,5 +29,8 @@ if ($interactive) {
 
 $ok = Invoke-ProgramUpdate -Scope ([string]$Scope) -ListOnly:$ListOnly -Interactive:$interactive
 
+# Exit code 3: Migrator was started again as administrator; the caller closes.
+if ($ok -is [string] -and $ok -eq 'Restarted') { exit 3 }
 if ($interactive) { Wait-Enter }
 if (-not $ok) { exit 1 }
+exit 0

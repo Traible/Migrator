@@ -2,7 +2,10 @@
 [CmdletBinding()]
 param(
     # en | ru | auto - overrides the saved language for this run
-    [string]$Language
+    [string]$Language,
+    # Open this screen first (used when Migrator restarts itself as administrator).
+    [ValidateSet('', 'Update')]
+    [string]$Start = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -96,6 +99,20 @@ try {
     Write-Warn $_.Exception.Message
 }
 
+function Open-ProgramUpdate {
+    # $true when Migrator was started again as administrator from that screen:
+    # this window then has to close.
+    $global:LASTEXITCODE = 0
+    & (Join-Path $PSScriptRoot 'update.ps1')
+    $restarted = ($LASTEXITCODE -eq 3)
+    Import-MigratorModules
+    return $restarted
+}
+
+if ($Start -eq 'Update') {
+    try { if (Open-ProgramUpdate) { return } } catch { Write-Err $_.Exception.Message; Wait-Enter }
+}
+
 while ($true) {
     $config = Get-MigratorConfig
     $backupRoot = Resolve-MigratorPath $config.BackupRoot
@@ -149,7 +166,7 @@ while ($true) {
                     Wait-Enter
                 }
             }
-            'update'   { & (Join-Path $PSScriptRoot 'update.ps1'); Import-MigratorModules }
+            'update'   { if (Open-ProgramUpdate) { return } }
             'tools'    { Show-ToolStatus }
             'language' { Select-Language }
             'about'    { Show-About }

@@ -362,7 +362,8 @@ function Invoke-ProgramUpdate {
     #   interactive without -Scope: a menu with both and "choose from the list".
     # Interactive runs ask for a typed "y" before anything is updated; in a
     # non-interactive run the -Scope switch is the consent.
-    # Returns $false when winget could not be asked or a program failed.
+    # Returns $false when winget could not be asked or a program failed, and
+    # 'Restarted' when Migrator was started again as administrator.
     [CmdletBinding()]
     param(
         [ValidateSet('', 'Recommended', 'All')][string]$Scope = '',
@@ -425,16 +426,20 @@ function Invoke-ProgramUpdate {
         }
         switch ($choice) {
             'Admin' {
-                # This screen again, in a new window with administrator rights.
-                $script = Join-Path (Get-MigratorRoot) 'src\update.ps1'
-                $launchArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script)
+                # Migrator again, in a new window with administrator rights,
+                # opened on this screen. 'Restarted' tells the caller to close
+                # this window; when Windows was not given the permission,
+                # nothing was started and this window stays.
+                $script = Join-Path (Get-MigratorRoot) 'src\main.ps1'
+                $launchArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-Start', 'Update')
                 try {
                     Start-Process -FilePath (Get-Process -Id $PID).Path -Verb RunAs -ArgumentList (ConvertTo-NativeCommandLine -Arguments $launchArgs)
-                    Write-Hint (T 'm.admin.restarting')
                 } catch {
                     Write-Warn (T 'u.admin_declined')
+                    return $true
                 }
-                return $true
+                Write-Hint (T 'm.admin.restarting')
+                return 'Restarted'
             }
             'Recommended' { $picked = @($recommended.Id) }
             'All'         { $picked = @($upgrades.Id) }
