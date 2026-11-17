@@ -28,7 +28,7 @@ param(
     [switch]$Yes,
     # Only put a portable 7-Zip into Tools\7-Zip (used by Migrator itself).
     [switch]$SevenZipOnly,
-    [string]$PowerShellVersion = '7.6.10'
+    [string]$PowerShellVersion = '7.7.0'
 )
 
 $ErrorActionPreference = 'Stop'

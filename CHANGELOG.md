@@ -14,6 +14,7 @@
 ### Changed
 
 - **Problems are orange, the way out is green.** The messages about a missing PowerShell 7 or 7-Zip (`Migrator.bat`, `Get-Tools.ps1`, the offer inside Migrator) were one block of text of the same color. Now the problem line is marked `[!]` and orange, every way to solve it is marked `->` and green, and explanations stay quiet. All warnings of Migrator use the same orange instead of yellow. Where the console cannot show it (Windows older than 10 1511, redirected output, `NO_COLOR` for the launcher) the text is plain or yellow as before.
+- `Get-Tools.ps1` downloads PowerShell **7.7.0** (was 7.6.10), the version Migrator is now tested with.
 
 
 ## 2.3.1 — 2026-11-14
