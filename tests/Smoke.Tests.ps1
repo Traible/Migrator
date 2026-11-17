@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Sel
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.5.1') 'Tool version is 2.5.1'
+Assert-True ([string]$config.ToolVersion -eq '2.5.2') 'Tool version is 2.5.2'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -346,19 +346,28 @@ function New-TestTree([string]$Root, [hashtable]$Files) {
 }
 try {
     $installed = Join-Path $selfDir 'installed'
-    New-TestTree $installed @{ 'Migrator.bat' = 'bat v1'; 'src\main.ps1' = 'main v1'; 'src\lib\Old.psm1' = 'gone in v2'; 'tests\Old.Tests.ps1' = 'not shipped any more'; 'README.md' = 'readme v1' }
+    New-TestTree $installed @{ 'Migrator.bat' = 'bat v1'; 'src\main.ps1' = 'main v1'; 'src\lib\Old.psm1' = 'gone in v2'; 'tests\Old.Tests.ps1' = 'not shipped any more'; 'README.md' = 'readme v1'; 'src\config\defaults.json' = '{"Compression":0}' }
     New-TestTree $installed @{ 'src\config\user.json' = '{"Language":"ru"}'; 'Tools\pwsh\pwsh.exe' = 'tool'; 'Logs\run.log' = 'log' }
     $listed = New-CopyManifest -Root $installed
     Set-Content -LiteralPath (Join-Path $installed 'src\config\user.json') -Value '{"Language":"en"}' -NoNewline
-    Assert-True ($listed -eq 5 -and (Test-MigratorCopy -Root $installed).Ok) 'Copy check: the file list covers the scripts; settings, tools and logs are free to change'
+    Assert-True ($listed -eq 6 -and (Test-MigratorCopy -Root $installed).Ok) 'Copy check: the file list covers the scripts; settings, tools and logs are free to change'
     Assert-True (-not (Test-MigratorCopy -Root (Join-Path $installed 'src')).HasManifest) 'Copy check: a folder without the list (a development checkout) is not checked'
 
     $package = Join-Path $selfDir 'package\Migrator-9.9.9'
-    New-TestTree $package @{ 'Migrator.bat' = 'bat v2'; 'src\main.ps1' = 'main v2'; 'src\lib\New.psm1' = 'new in v2'; 'README.md' = 'readme v2' }
+    New-TestTree $package @{ 'Migrator.bat' = 'bat v2'; 'src\main.ps1' = 'main v2'; 'src\lib\New.psm1' = 'new in v2'; 'README.md' = 'readme v2'; 'src\config\defaults.json' = '{"Compression":1}' }
     [void](New-CopyManifest -Root $package)
     $zip = Join-Path $selfDir 'Migrator-9.9.9.zip'
     Compress-Archive -Path $package -DestinationPath $zip
     $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+
+    # defaults.json ships with the program: a change is noticed, and an update
+    # replaces the file but keeps what was edited by hand.
+    Set-Content -LiteralPath (Join-Path $installed 'src\config\defaults.json') -Value '{"Compression":5}' -NoNewline
+    $editedDefaults = Test-MigratorCopy -Root $installed
+    Assert-True (($editedDefaults.Changed -join ',') -eq 'src\config\defaults.json') 'Copy check: the shipped defaults are part of the list, unlike the user''s own settings'
+
+    $order = @(Get-InstallOrder -Entries @('src\lib\Migrator.Self.psm1', 'README.md', 'src\main.ps1', 'src\lib\Migrator.Kit.psm1', 'src\locale\en.psd1'))
+    Assert-True (($order -join '|') -eq 'README.md|src\lib\Migrator.Kit.psm1|src\locale\en.psd1|src\lib\Migrator.Self.psm1|src\main.ps1|files.sha256') 'Self-update: the files the self-check needs are copied last, the list of hashes at the very end'
 
     $rejected = $false
     try { [void](Install-MigratorRelease -Root $installed -ZipPath $zip -Sha256 ('0' * 64)) } catch { $rejected = $true }
@@ -369,6 +378,8 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $installed 'src\lib\Old.psm1')) -and -not (Test-Path -LiteralPath (Join-Path $installed 'tests')) -and $applied.Removed -eq 2 -and (Test-MigratorCopy -Root $installed).Ok) 'Self-update: new files replace the old ones; files and emptied folders the new version dropped are removed'
     Assert-True ((Get-Content -LiteralPath (Join-Path $installed 'src\config\user.json') -Raw) -eq '{"Language":"en"}' -and
         (Test-Path -LiteralPath (Join-Path $installed 'Tools\pwsh\pwsh.exe')) -and (Test-Path -LiteralPath (Join-Path $installed 'Logs\run.log'))) 'Self-update: settings, tools and logs are kept'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $installed 'src\config\defaults.json') -Raw) -eq '{"Compression":1}' -and
+        (Get-Content -LiteralPath (Join-Path $installed 'src\config\defaults.before-update.json') -Raw) -eq '{"Compression":5}') 'Self-update: new defaults are installed, hand-edited ones are kept in a copy'
 
     Set-Content -LiteralPath (Join-Path $installed 'README.md') -Value 'edited' -NoNewline
     Remove-Item -LiteralPath (Join-Path $installed 'src\lib\New.psm1')
@@ -422,6 +433,31 @@ try {
 } finally {
     Remove-Item Env:MIGRATOR_TEST_RELEASE_JSON -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $selfDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# An archive with hostile names must not write outside the target folder.
+# (A ZIP given the .7z name: 7-Zip goes by the content, and so would a restore.)
+$hostileDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
+$hostileArchiver = Get-ArchiverPath
+if ($hostileArchiver) {
+    try {
+        $hostileTarget = Join-Path $hostileDir 'a\b\profile'
+        New-Item -ItemType Directory -Force -Path $hostileTarget | Out-Null
+        Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+        $hostileZip = Join-Path $hostileDir 'crafted.7z'
+        $zipFile = [IO.Compression.ZipFile]::Open($hostileZip, 'Create')
+        foreach ($name in '..\..\escaped-relative.txt', (Join-Path $hostileDir 'escaped-absolute.txt'), '\escaped-rooted.txt', 'sub\..\..\..\escaped-mixed.txt', 'Documents\normal.txt') {
+            $writer = [IO.StreamWriter]::new($zipFile.CreateEntry($name).Open()); $writer.Write('x'); $writer.Dispose()
+        }
+        $zipFile.Dispose()
+        [void](Expand-ProfileArchive -ArchiverPath $hostileArchiver -ArchivePath $hostileZip -TargetPath $hostileTarget -NoProgress)
+        $outside = @(Get-ChildItem -LiteralPath $hostileDir -Recurse -File | Where-Object {
+            $_.FullName -ne $hostileZip -and -not $_.FullName.StartsWith($hostileTarget + '\', [StringComparison]::OrdinalIgnoreCase) })
+        Assert-True ($outside.Count -eq 0 -and (Test-Path -LiteralPath (Join-Path $hostileTarget 'Documents\normal.txt')) -and
+            -not (Test-Path -LiteralPath (Join-Path ([IO.Path]::GetPathRoot($hostileDir)) 'escaped-rooted.txt'))) "An archive with '..', absolute and rooted paths is extracted inside the target only ($(@($outside | ForEach-Object Name) -join ', '))"
+    } finally {
+        Remove-Item -LiteralPath $hostileDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $ruLocale = Import-PowerShellDataFile -LiteralPath (Join-Path $toolRoot 'src\locale\ru.psd1')

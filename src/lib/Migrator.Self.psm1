@@ -20,8 +20,19 @@ Set-StrictMode -Version Latest
 
 $script:Repository = 'Traible/Migrator'
 $script:ManifestName = 'files.sha256'
-# Not covered by the list: settings the user may edit and data Migrator creates.
-$script:UncheckedPrefixes = @('src\config\', 'Tools\', 'Logs\', 'Backups\', 'dist\')
+# Not covered by the list: the user's own settings and data Migrator creates.
+# src\config\defaults.json IS covered: it ships with the program and a new
+# version may change it; personal settings belong in user.json.
+$script:UncheckedPrefixes = @('Tools\', 'Logs\', 'Backups\', 'dist\')
+$script:UncheckedFiles = @('src\config\user.json', 'src\config\defaults.before-update.json')
+# Copied last by an update, in this order, with files.sha256 at the very end:
+# the files the self-check and the repair need. If an update is cut short,
+# the old ones are still in place and the next start can finish the job.
+$script:RecoveryFiles = @(
+    'src\locale\en.psd1', 'src\locale\ru.psd1'
+    'src\lib\Migrator.Core.psm1', 'src\lib\Migrator.UI.psm1', 'src\lib\Migrator.Self.psm1'
+    'src\main.ps1'
+)
 
 function Get-ReleasePageUrl { return "https://github.com/$script:Repository/releases/latest" }
 
@@ -41,7 +52,7 @@ function New-CopyManifest {
     $base = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
     $lines = foreach ($file in @(Get-ChildItem -LiteralPath $base -Recurse -File -Force | Sort-Object FullName)) {
         $relative = $file.FullName.Substring($base.Length)
-        if ($relative -eq $script:ManifestName) { continue }
+        if ($relative -eq $script:ManifestName -or $relative -in $script:UncheckedFiles) { continue }
         if (@($script:UncheckedPrefixes | Where-Object { $relative.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) { continue }
         '{0} *{1}' -f (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash, $relative
     }
@@ -192,13 +203,26 @@ function Get-UpdateNotice {
     return $null
 }
 
+function Get-InstallOrder {
+    # The order an update copies files in: everything else first, then the
+    # files the self-check needs, and the list of hashes last.
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][string[]]$Entries = @())
+
+    $last = @($script:RecoveryFiles | Where-Object { $Entries -contains $_ })
+    $first = @($Entries | Where-Object { $_ -notin $script:RecoveryFiles -and $_ -ne $script:ManifestName })
+    return @($first + $last + @($script:ManifestName))
+}
+
 function Install-MigratorRelease {
     # Puts a release archive over the folder -Root.
     #   1. the archive must have the expected SHA256;
     #   2. it is unpacked aside and must be complete by its own files.sha256;
     #   3. its files replace the ones in -Root; files of the old release that
     #      the new one no longer has are removed.
-    # Settings (src\config), Tools, Logs and Backups are never touched.
+    # The user's settings (src\config\user.json), Tools, Logs and Backups are
+    # never touched. A defaults.json that was edited by hand is replaced like
+    # any other file of the program, and a copy of it is kept next to it.
     # Nothing in -Root changes unless steps 1 and 2 pass.
     [CmdletBinding()]
     param(
@@ -226,7 +250,18 @@ function Install-MigratorRelease {
         $newEntries = Read-CopyManifest -Root $package
         $target = [IO.Path]::GetFullPath($Root).TrimEnd('\')
 
-        foreach ($relative in @($newEntries.Keys) + @($script:ManifestName)) {
+        # Settings changed by hand in defaults.json would be lost: keep a copy.
+        $defaults = 'src\config\defaults.json'
+        $localDefaults = Join-Path $target $defaults
+        if ($newEntries.Contains($defaults) -and (Test-Path -LiteralPath $localDefaults -PathType Leaf)) {
+            $localHash = (Get-FileHash -LiteralPath $localDefaults -Algorithm SHA256).Hash
+            $pristine = ($null -ne $oldEntries -and $oldEntries.Contains($defaults) -and $oldEntries[$defaults] -eq $localHash)
+            if (-not $pristine -and $localHash -ne $newEntries[$defaults]) {
+                Copy-Item -LiteralPath $localDefaults -Destination (Join-Path $target 'src\config\defaults.before-update.json') -Force
+            }
+        }
+
+        foreach ($relative in (Get-InstallOrder -Entries @($newEntries.Keys))) {
             $destination = Join-Path $target $relative
             $parent = Split-Path -Parent $destination
             if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
@@ -349,6 +384,7 @@ Export-ModuleMember -Function @(
     'Get-LatestRelease'
     'Test-NewerVersion'
     'Get-UpdateNotice'
+    'Get-InstallOrder'
     'Install-MigratorRelease'
     'Update-MigratorCopy'
     'Invoke-StartupCheck'

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5.2 — 2026-11-17
+
+Hardening after an outside review of 2.5.1.
+
+### Fixed
+
+- **The shipped defaults were outside the self-check.** `src\config\defaults.json` was neither checked nor delivered by an update, so new default values never reached an installed copy. It is now part of `files.sha256`; only the user's own `src\config\user.json` stays out. An update replaces `defaults.json`, and a hand-edited one is kept next to it as `defaults.before-update.json`. Personal settings belong in `user.json`, which overrides the defaults and survives updates.
+
+### Changed
+
+- **An interrupted self-update can finish itself.** The files the self-check and the repair need (the core, interface and self-check modules, both languages, `main.ps1`) are now copied last, and the list of hashes at the very end. If the PC is switched off in the middle, the old ones are still in place and the next start reports the damage and offers to repair it.
+- The GitHub Actions used by the tests and by the release build are pinned to exact commits, and PSScriptAnalyzer to an exact version.
+- A test extracts an archive with `..`, absolute and rooted paths and checks that nothing is written outside the target folder (7-Zip neutralises such names; the test guards against a change in that).
+
 ## 2.5.1 — 2026-11-17
 
 ### Fixed

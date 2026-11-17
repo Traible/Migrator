@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.5.1
+  Migrator  v2.5.2
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -246,8 +246,12 @@ Keep the `.manifest.json` next to the archive: the restore uses it.
 
 ## Configuration
 
-`src\config\defaults.json` (the language chosen in the menu is saved to
-`src\config\user.json`):
+The defaults are in `src\config\defaults.json`. Put your own values into
+`src\config\user.json` (same format, only the settings you change; the
+language chosen in the menu is saved there too): it overrides the defaults
+and survives updates. `defaults.json` belongs to the program: it is part of
+the self-check and is replaced by an update (a hand-edited one is kept as
+`defaults.before-update.json`).
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -294,7 +298,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 180 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 184 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

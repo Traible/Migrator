@@ -11,7 +11,7 @@ Migrator — небольшой инструмент на PowerShell для пе
 восстанавливает их в ту же, другую или новую учётную запись.
 
 ```text
-  Migrator  v2.5.1
+  Migrator  v2.5.2
   ====================================================================
   Резервная копия и восстановление профиля пользователя Windows
 
@@ -254,8 +254,12 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 
 ## Настройки
 
-`src\config\defaults.json` (язык, выбранный в меню, сохраняется в
-`src\config\user.json`):
+Значения по умолчанию лежат в `src\config\defaults.json`. Свои значения
+пишите в `src\config\user.json` (тот же формат, только изменяемые параметры;
+туда же сохраняется язык, выбранный в меню): он перекрывает значения по
+умолчанию и переживает обновления. `defaults.json` принадлежит программе: он
+входит в самопроверку и заменяется при обновлении (изменённый вручную
+сохраняется как `defaults.before-update.json`).
 
 | Параметр | По умолчанию | Смысл |
 |---|---|---|
@@ -304,7 +308,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 180 проверок, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 184 проверки, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 
