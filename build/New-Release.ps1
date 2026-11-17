@@ -20,6 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $root 'src\lib\Migrator.Core.psm1') -Force
+Import-Module (Join-Path $root 'src\lib\Migrator.Self.psm1') -Force
 $version = [string](Get-DefaultConfig).ToolVersion
 
 if (-not $SkipTests) {
@@ -44,6 +45,12 @@ foreach ($name in $include) {
 }
 Remove-Item -LiteralPath (Join-Path $stage 'src\config\user.json') -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'Backups'), (Join-Path $stage 'Logs') | Out-Null
+
+# files.sha256: the list the copy checks itself against at start, and the
+# reason a self-update can tell a complete package from a broken one.
+$listed = New-CopyManifest -Root $stage
+if (-not (Test-MigratorCopy -Root $stage).Ok) { throw 'files.sha256 does not match the staged files.' }
+Write-Host "files.sha256 lists $listed files"
 
 function New-Zip([string]$Name) {
     $zip = Join-Path $dist $Name

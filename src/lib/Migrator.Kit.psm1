@@ -14,9 +14,10 @@ Set-StrictMode -Version Latest
 
 $script:KitFolderName = 'Migrator'
 $script:KitFiles = @(
-    'src'
+    'src', 'tests', 'build'
     'Migrator.bat', 'Get Tools.bat', 'Get-Tools.ps1', 'System Restore Tools.bat'
     'README.md', 'README.ru.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY.md'
+    'files.sha256'
 )
 
 function Get-RestoreKitPath {

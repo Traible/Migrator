@@ -180,6 +180,30 @@ end. The recommended set is a setting, `UpdateRecommended`.
 Only programs `winget` knows are updated, and `winget` must be present
 (it is not in Windows Sandbox or LTSC). Drivers are not touched.
 
+## Self-check and new versions
+
+A release archive carries `files.sha256`, the SHA256 of every file in it.
+Every time Migrator starts it compares its own folder with that list and
+says so when a file is missing or changed - the usual result of a folder
+copied to a USB drive incompletely.
+
+Once a day Migrator also asks GitHub for the latest release (one request to
+`api.github.com`, nothing about your PC is sent). When a newer version
+exists it asks whether to update: after `y` the archive is downloaded,
+checked against its checksum and its own file list, put over the folder, and
+Migrator restarts. Settings, `Tools`, `Logs` and `Backups` are kept. Without
+`y` nothing is downloaded. `"CheckForUpdates": false` in the settings turns
+the request off. A copy without `files.sha256` (a `git clone`) is neither
+checked nor updated.
+
+This check cannot protect against someone who changes the scripts on
+purpose. For that, release archives are built by GitHub Actions and GitHub
+keeps a signed record of the build, which can be verified from outside:
+
+```bat
+gh attestation verify Migrator-2.5.0.zip --repo Traible/Migrator
+```
+
 ## Command line
 
 ```bat
@@ -230,6 +254,7 @@ Keep the `.manifest.json` next to the archive: the restore uses it.
 | `VerifyBeforeRestore` | `false` | default choice for the full test before restore |
 | `ComputeSha256` | `false` | store the archive's SHA256 in the manifest (computed together with the test) |
 | `CloudFolderPolicy` | `Auto` | `Auto`, `Exclude`, `Include` |
+| `CheckForUpdates` | `true` | look up the latest release at start, at most once a day |
 | `ExcludeDevCaches` | `false` | also exclude developer caches in Full mode |
 | `ExtraExcludes` | `[]` | your own masks, see below |
 | `UpdateRecommended` | everyday programs | winget package ids (wildcards) updated by *Recommended only* |
@@ -265,7 +290,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 165 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 177 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

@@ -15,7 +15,7 @@ if ($Language) { $env:MIGRATOR_LANG = $Language }
 $toolRoot = Split-Path -Parent $PSScriptRoot
 
 function Import-MigratorModules {
-    foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
+    foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Self') {
         Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force -Global
     }
 }
@@ -88,6 +88,14 @@ function Select-Language {
     Set-MigratorUserSetting -Name 'Language' -Value $choice
 }
 
+# The copy checks itself against files.sha256 and, once a day, looks for a
+# newer release; after an update a new Migrator is started and this one closes.
+try {
+    if (Invoke-StartupCheck) { return }
+} catch {
+    Write-Warn $_.Exception.Message
+}
+
 while ($true) {
     $config = Get-MigratorConfig
     $backupRoot = Resolve-MigratorPath $config.BackupRoot
@@ -104,6 +112,9 @@ while ($true) {
     $status[(T 'f.browsers')] = if ($browsers.Count -gt 0) { $browsers -join ', ' } else { T 'm.browsers.none' }
     $status[(T 'f.backups')]  = $backupRoot
     if (-not $archiver) { $status['7-Zip'] = @((T 'm.tools.missing'), 'Error') }
+    $newVersion = $null
+    try { $newVersion = Get-UpdateNotice } catch { }
+    if ($newVersion) { $status[(T 'f.update')] = @((T 's.available' $newVersion), 'Warn') }
     Write-Fields -Fields $status
 
     $items = [System.Collections.Generic.List[object]]::new()

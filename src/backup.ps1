@@ -23,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $toolRoot = Split-Path -Parent $PSScriptRoot
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Self') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 

@@ -65,7 +65,7 @@ Write-Host ''
 Write-Host '2. Modules, configuration, localization' -ForegroundColor Yellow
 
 $env:MIGRATOR_LANG = 'en'
-foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs') {
+foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Self') {
     Import-Module (Join-Path $toolRoot "src\lib\Migrator.$module.psm1") -Force
 }
 
@@ -330,6 +330,70 @@ try {
     Remove-Item Env:MIGRATOR_TEST_WINGET_UPGRADE -ErrorAction SilentlyContinue
     Remove-Item Env:MIGRATOR_TEST_WINGET_EXPORT -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $programDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Migrator's own copy: the list of file hashes and the self-update.
+$selfDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
+function New-TestTree([string]$Root, [hashtable]$Files) {
+    foreach ($relative in $Files.Keys) {
+        $path = Join-Path $Root $relative
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+        Set-Content -LiteralPath $path -Value $Files[$relative] -NoNewline
+    }
+}
+try {
+    $installed = Join-Path $selfDir 'installed'
+    New-TestTree $installed @{ 'Migrator.bat' = 'bat v1'; 'src\main.ps1' = 'main v1'; 'src\lib\Old.psm1' = 'gone in v2'; 'README.md' = 'readme v1' }
+    New-TestTree $installed @{ 'src\config\user.json' = '{"Language":"ru"}'; 'Tools\pwsh\pwsh.exe' = 'tool'; 'Logs\run.log' = 'log' }
+    $listed = New-CopyManifest -Root $installed
+    Set-Content -LiteralPath (Join-Path $installed 'src\config\user.json') -Value '{"Language":"en"}' -NoNewline
+    Assert-True ($listed -eq 4 -and (Test-MigratorCopy -Root $installed).Ok) 'Copy check: the file list covers the scripts; settings, tools and logs are free to change'
+    Assert-True (-not (Test-MigratorCopy -Root (Join-Path $installed 'src')).HasManifest) 'Copy check: a folder without the list (a development checkout) is not checked'
+
+    $package = Join-Path $selfDir 'package\Migrator-9.9.9'
+    New-TestTree $package @{ 'Migrator.bat' = 'bat v2'; 'src\main.ps1' = 'main v2'; 'src\lib\New.psm1' = 'new in v2'; 'README.md' = 'readme v2' }
+    [void](New-CopyManifest -Root $package)
+    $zip = Join-Path $selfDir 'Migrator-9.9.9.zip'
+    Compress-Archive -Path $package -DestinationPath $zip
+    $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+
+    $rejected = $false
+    try { [void](Install-MigratorRelease -Root $installed -ZipPath $zip -Sha256 ('0' * 64)) } catch { $rejected = $true }
+    Assert-True ($rejected -and (Get-Content -LiteralPath (Join-Path $installed 'src\main.ps1') -Raw) -eq 'main v1') 'Self-update: an archive with a wrong checksum is refused and nothing is changed'
+
+    $applied = Install-MigratorRelease -Root $installed -ZipPath $zip -Sha256 $zipHash.ToLower()
+    Assert-True ((Get-Content -LiteralPath (Join-Path $installed 'src\main.ps1') -Raw) -eq 'main v2' -and (Test-Path -LiteralPath (Join-Path $installed 'src\lib\New.psm1')) -and
+        -not (Test-Path -LiteralPath (Join-Path $installed 'src\lib\Old.psm1')) -and $applied.Removed -eq 1 -and (Test-MigratorCopy -Root $installed).Ok) 'Self-update: new files replace the old ones, files the new version dropped are removed'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $installed 'src\config\user.json') -Raw) -eq '{"Language":"en"}' -and
+        (Test-Path -LiteralPath (Join-Path $installed 'Tools\pwsh\pwsh.exe')) -and (Test-Path -LiteralPath (Join-Path $installed 'Logs\run.log'))) 'Self-update: settings, tools and logs are kept'
+
+    Set-Content -LiteralPath (Join-Path $installed 'README.md') -Value 'edited' -NoNewline
+    Remove-Item -LiteralPath (Join-Path $installed 'src\lib\New.psm1')
+    $damagedCopy = Test-MigratorCopy -Root $installed
+    Assert-True (-not $damagedCopy.Ok -and ($damagedCopy.Missing -join ',') -eq 'src\lib\New.psm1' -and ($damagedCopy.Changed -join ',') -eq 'README.md') 'Copy check: a missing file and a changed file are both named'
+
+    Remove-Item -LiteralPath (Join-Path $package 'src\lib\New.psm1')
+    $brokenZip = Join-Path $selfDir 'broken.zip'
+    Compress-Archive -Path $package -DestinationPath $brokenZip
+    $refused = $false
+    try { [void](Install-MigratorRelease -Root $installed -ZipPath $brokenZip -Sha256 (Get-FileHash -LiteralPath $brokenZip -Algorithm SHA256).Hash) } catch { $refused = $true }
+    Assert-True ($refused -and (Get-Content -LiteralPath (Join-Path $installed 'README.md') -Raw) -eq 'edited') 'Self-update: an incomplete package is refused before anything is copied'
+
+    $base = 'https://github.com/Traible/Migrator/releases/download/v9.9.9/'
+    $releaseData = @{ tag_name = 'v9.9.9'; assets = @(
+        @{ name = 'Migrator-9.9.9.zip'; browser_download_url = $base + 'Migrator-9.9.9.zip' }
+        @{ name = 'Migrator-9.9.9.zip.sha256'; browser_download_url = $base + 'Migrator-9.9.9.zip.sha256' }
+    ) }
+    $foreignData = @{ tag_name = 'v9.9.9'; assets = @(
+        @{ name = 'Migrator-9.9.9.zip'; browser_download_url = 'https://example.com/Migrator-9.9.9.zip' }
+        @{ name = 'Migrator-9.9.9.zip.sha256'; browser_download_url = 'https://example.com/Migrator-9.9.9.zip.sha256' }
+    ) }
+    $release = ConvertFrom-ReleaseData -Data $releaseData
+    Assert-True ($release -and $release.Version -eq '9.9.9' -and $release.ZipUrl -eq ($base + 'Migrator-9.9.9.zip') -and $null -eq (ConvertFrom-ReleaseData -Data $foreignData)) 'New version: only files from this repository''s own releases are accepted'
+    Assert-True ((Test-NewerVersion -Candidate '2.10.0' -Current '2.9.1') -and -not (Test-NewerVersion -Candidate '2.5.0' -Current '2.5.0') -and -not (Test-NewerVersion -Candidate 'latest' -Current '2.5.0')) 'New version: versions are compared as numbers'
+    Assert-True ((Test-Path -LiteralPath (Join-Path $toolRoot 'files.sha256')) -or $null -eq (Get-UpdateNotice)) 'New version: a development checkout is never offered an update'
+} finally {
+    Remove-Item -LiteralPath $selfDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 $ruLocale = Import-PowerShellDataFile -LiteralPath (Join-Path $toolRoot 'src\locale\ru.psd1')

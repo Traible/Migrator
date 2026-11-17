@@ -39,6 +39,9 @@ function Get-DefaultConfig {
         # Extraction already checks the CRC of every file.
         VerifyBeforeRestore = $false
         ComputeSha256       = $false
+        # At start, look up the latest release on GitHub (at most once a day)
+        # and offer to update. Nothing is downloaded without a typed "y".
+        CheckForUpdates     = $true
         # Cloud-synced folders in the profile root. Reading a cloud-only
         # placeholder makes the sync client download it.
         #   Auto    - interactive: ask; non-interactive: exclude when cloud-only files exist

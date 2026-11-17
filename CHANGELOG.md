@@ -10,6 +10,13 @@
   - *Everything*.
   Nothing is updated without a typed `y`; programs are updated one by one and the ones that failed are named at the end. The recommended set is the `UpdateRecommended` setting. Unattended: `update.ps1 -Scope Recommended|All -NonInteractive`; `-ListOnly` only shows the list. Drivers are not touched.
   Without administrator rights Windows asks for permission again for almost every program, so the screen says so and offers *Restart as Administrator* right there. It also names the source: the winget catalog kept by Microsoft, with every installer checked against the catalog hash.
+- **Migrator checks its own copy at start.** A release now carries `files.sha256`, the SHA256 of every file. A missing or changed file is reported before the menu: the usual sign of a folder copied to a USB drive incompletely. Settings, `Tools`, `Logs` and `Backups` are not part of the check; a `git clone` has no list and is not checked.
+- **New versions are offered at start.** Once a day Migrator asks GitHub for the latest release. When there is a newer one (or this copy is damaged), it asks; after a typed `y` the archive is downloaded, checked against its checksum and its own file list, put over the folder, and Migrator restarts. Files the new version dropped are removed, settings and tools are kept, and nothing changes when a check fails. `"CheckForUpdates": false` turns the request off.
+- **Releases are built by GitHub Actions** (`.github/workflows/release.yml`) with a signed build attestation: `gh attestation verify Migrator-<version>.zip --repo Traible/Migrator` confirms that an archive is the one built from this repository.
+
+### Changed
+
+- The restore kit is now a full copy of Migrator (with `tests` and `build`), so it passes the same self-check.
 
 ## 2.4.0 — 2026-11-17
 

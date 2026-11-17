@@ -189,6 +189,30 @@ E:\MigratorBackups\Migrator\Tools\pwsh, Tools\7-Zip
 быть на компьютере (в Windows Sandbox и LTSC его нет). Драйверы не
 затрагиваются.
 
+## Самопроверка и новые версии
+
+В архиве релиза лежит `files.sha256` — SHA256 каждого файла. При каждом
+запуске Migrator сравнивает свою папку с этим списком и сообщает, если файла
+не хватает или он изменён: так обычно выглядит папка, скопированная на
+флешку не полностью.
+
+Раз в день Migrator также спрашивает у GitHub последний релиз (один запрос к
+`api.github.com`, о вашем компьютере ничего не передаётся). Если вышла новая
+версия, он спрашивает, обновиться ли: после `y` архив скачивается, сверяется
+с контрольной суммой и со своим списком файлов, кладётся поверх папки, и
+Migrator перезапускается. Настройки, `Tools`, `Logs` и `Backups` сохраняются.
+Без `y` ничего не скачивается. `"CheckForUpdates": false` в настройках
+отключает запрос. Копия без `files.sha256` (`git clone`) не проверяется и не
+обновляется.
+
+От намеренной подмены скриптов такая проверка не защищает. Для этого архивы
+релизов собирает GitHub Actions, и GitHub хранит подписанную запись о
+сборке, которую можно проверить снаружи:
+
+```bat
+gh attestation verify Migrator-2.5.0.zip --repo Traible/Migrator
+```
+
 ## Командная строка
 
 ```bat
@@ -239,6 +263,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 | `VerifyBeforeRestore` | `false` | выбор по умолчанию для полной проверки перед восстановлением |
 | `ComputeSha256` | `false` | записывать SHA256 архива в манифест (считается одновременно с проверкой) |
 | `CloudFolderPolicy` | `Auto` | `Auto`, `Exclude`, `Include` |
+| `CheckForUpdates` | `true` | узнавать о последнем релизе при запуске, не чаще раза в день |
 | `ExcludeDevCaches` | `false` | исключать кэши разработчика и в полном режиме |
 | `ExtraExcludes` | `[]` | свои маски, см. ниже |
 | `UpdateRecommended` | повседневные программы | идентификаторы пакетов winget (с масками), которые обновляет «Только рекомендуемые» |
@@ -276,7 +301,7 @@ pwsh -NoProfile -File src\restore.ps1 -Method WindowsOld -SourceUser alex -Targe
 ## Разработка
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 165 проверок, около минуты
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 177 проверок, около минуты
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<версия>.zip
 ```
 
