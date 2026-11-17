@@ -14,7 +14,9 @@
 ### Changed
 
 - **Problems are orange, the way out is green.** The messages about a missing PowerShell 7 or 7-Zip (`Migrator.bat`, `Get-Tools.ps1`, the offer inside Migrator) were one block of text of the same color. Now the problem line is marked `[!]` and orange, every way to solve it is marked `->` and green, and explanations stay quiet. All warnings of Migrator use the same orange instead of yellow. Where the console cannot show it (Windows older than 10 1511, redirected output, `NO_COLOR` for the launcher) the text is plain or yellow as before.
-- `Get-Tools.ps1` downloads PowerShell **7.7.0** (was 7.6.10), the version Migrator is now tested with.
+- **Skipped service files no longer look like a problem.** A profile that is in use always has files locked by running programs: browser cookies, application databases and logs inside `AppData`. They used to turn every such backup into an orange "completed with warnings". Now they are counted in one quiet line and the result stays a success; the full list is still in `.errors.log` and in the manifest. A skipped file from the user's own folders (Documents, Desktop, ...) or a mail archive (`*.pst`) is a warning as before: it is named first, with what to do about it. The manifest has a new field, `skippedUserFileCount`.
+- Not backed up any more (always locked, useless in another account): `AppDataocalcomms` (the store of the built-in mail and people apps) and the registry hives of store apps (`packages*systemappdatahelium`); the hives are also never restored from older archives.
+- `get-tools.ps1` downloads powershell **7.7.0** (was 7.6.10), the version Migrator is now tested with.
 
 
 ## 2.3.1 — 2026-11-14

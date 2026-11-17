@@ -83,6 +83,11 @@ function Get-DefaultConfig {
             'AppData\Local\Microsoft\Windows\Temporary Internet Files\'
             'AppData\Local\History\'
             'AppData\Local\Microsoft\Windows\History\'
+            # Always in use and useless in another account: the store of the
+            # built-in Mail/People apps and the registry hives of Store apps
+            # (the same kind of file as NTUSER.DAT).
+            'AppData\Local\Comms\'
+            'AppData\Local\Packages\*\SystemAppData\Helium\'
             '*\*.tmp'
             '*\~$*'
             '*\*dmp'
@@ -126,6 +131,7 @@ function Get-DefaultConfig {
             '*\My Music\'
             '*\My Pictures\'
             '*\My Videos\'
+            '*\SystemAppData\Helium\'
         )
 
         ExtraExcludes = @()
@@ -876,6 +882,30 @@ function Select-ExcludedArchiveFolders {
 # Naming / manifests / logs
 # ---------------------------------------------------------------------------
 
+function Split-SkippedFiles {
+    # Files the archiver could not read because a program had them open.
+    #   Service   - inside AppData: cookies, databases and logs of running
+    #               programs. They are in use whenever the program runs, and
+    #               the backup is complete without them.
+    #   Important - everything else (Documents, Desktop, ...) and mail
+    #               archives (*.pst) wherever they are: the user's own data.
+    [CmdletBinding()]
+    param(
+        [AllowEmptyCollection()][string[]]$Files = @(),
+        [Parameter(Mandatory)][string]$ProfilePath
+    )
+
+    $root = [IO.Path]::GetFullPath($ProfilePath).TrimEnd('\') + '\'
+    $important = [System.Collections.Generic.List[string]]::new()
+    $service = [System.Collections.Generic.List[string]]::new()
+    foreach ($file in @($Files | Where-Object { $_ })) {
+        $relative = if ($file.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $file.Substring($root.Length) } else { $null }
+        $inAppData = ($null -ne $relative -and $relative.StartsWith('AppData\', [StringComparison]::OrdinalIgnoreCase))
+        if ($inAppData -and $file -notmatch '\.pst$') { $service.Add($file) } else { $important.Add($file) }
+    }
+    return [pscustomobject]@{ Important = @($important); Service = @($service) }
+}
+
 function New-SafeFileName {
     [CmdletBinding()]
     param([AllowEmptyString()][string]$Name)
@@ -1115,6 +1145,7 @@ Export-ModuleMember -Alias 'T' -Function @(
     'Get-DirectorySizeFast'
     'Get-CloudFolders'
     'Select-ExcludedArchiveFolders'
+    'Split-SkippedFiles'
     'New-SafeFileName'
     'New-BackupArtifacts'
     'Get-ManifestPath'

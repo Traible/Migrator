@@ -359,7 +359,14 @@ if ($runTest) {
 $archiveHash = $check.Sha256
 
 $finalOk = (-not $fatal) -and ($verifyState -ne 'failed')
-$hasWarnings = ($result.Outcome -eq 'Warnings') -or ($skippedFiles.Count -gt 0)
+# Service files of running programs (inside AppData) are skipped in every
+# backup of a profile that is in use: they do not make the result a warning.
+# A skipped file from the user's own folders does.
+$skipped = Split-SkippedFiles -Files $skippedFiles -ProfilePath $sourcePath
+$importantSkipped = @($skipped.Important)
+$serviceSkipped = @($skipped.Service)
+$skippedFiles = @($importantSkipped + $serviceSkipped)      # the user's files first
+$hasWarnings = ($importantSkipped.Count -gt 0) -or ($result.Outcome -eq 'Warnings' -and $skippedFiles.Count -eq 0)
 $resultCode = if (-not $finalOk) { 'FAILED' } elseif ($hasWarnings) { 'COMPLETED WITH WARNINGS' } else { 'SUCCESS' }
 $resultText = if (-not $finalOk) { T 'result.failed' } elseif ($hasWarnings) { T 'result.warnings' } else { T 'result.success' }
 $resultColor = if (-not $finalOk) { 'Error' } elseif ($hasWarnings) { 'Warn' } else { 'Ok' }
@@ -385,7 +392,10 @@ $speed =if ($result.Duration.TotalSeconds -gt 0) { [int64]($archiveBytes / $resu
 if ($skippedFiles.Count -gt 0 -or $result.StdErr.Trim()) {
     Write-TextFile -Path $artifacts.ErrorLog -Lines @(
         "Skipped files: $($skippedFiles.Count)"
-        $skippedFiles
+        "--- from the user's folders: $($importantSkipped.Count)"
+        $importantSkipped
+        "--- service files of running programs (AppData): $($serviceSkipped.Count)"
+        $serviceSkipped
         ''
         '--- archiver messages ---'
         $result.StdErr
@@ -427,6 +437,7 @@ Write-ManifestFile -Path $artifacts.Manifest -Data @{
     archiverExitCode     = [int]$result.ExitCode
     result               = $resultCode
     skippedFileCount     = $skippedFiles.Count
+    skippedUserFileCount = $importantSkipped.Count
     skippedFiles         = @($skippedFiles | Select-Object -First 200)
     excludedFolderCount  = $scan.ExcludedDirectories.Count
     excludedCloudFolders = @($excludedCloudFolders)
@@ -446,7 +457,9 @@ $report[(T 'f.archive')]  = $artifacts.Archive
 $report[(T 'f.size')]     = T 'b.report.size' (Format-Size $archiveBytes) $scan.Files
 $report[(T 'f.duration')] = T 'b.report.duration' (Format-Duration $result.Duration) (Format-Size $speed) (T 'unit.sec')
 $report[(T 'f.verify')]   = if ($verifyState -eq 'failed') { @($verifyText, 'Error') } else { $verifyText }
-$report[(T 'f.skipped')]  = if ($skippedFiles.Count -gt 0) { @((T 'b.report.skipped' $skippedFiles.Count), 'Warn') } else { T 'b.report.none' }
+$report[(T 'f.skipped')]  = if ($importantSkipped.Count -gt 0) { @((T 'b.report.skipped_important' $importantSkipped.Count $serviceSkipped.Count), 'Warn') }
+                            elseif ($serviceSkipped.Count -gt 0) { T 'b.report.skipped_service' $serviceSkipped.Count }
+                            else { T 'b.report.none' }
 if ($archiveHash) { $report['SHA256'] = $archiveHash }
 if ($kitResult) {
     $report[(T 'f.kit')] = if ($kitResult.Ok) { $kitResult.Path } else { @((T 'b.kit.failed' ($kitResult.Problems -join '; ')), 'Warn') }
@@ -487,13 +500,18 @@ Write-LogLine -Path $artifacts.Log -Message "Backup finished: result=$resultCode
 # ---------------------------------------------------------------------------
 Write-SummaryBox -Title (T 'b.report.title') -Fields $report -Color $resultColor
 
-if ($skippedFiles.Count -gt 0) {
+if ($importantSkipped.Count -gt 0) {
     Write-Host ''
-    Write-Warn (T 'b.report.skipped_explain')
-    foreach ($file in @($skippedFiles | Select-Object -First 10)) { Write-Hint "    $file" }
-    if ($skippedFiles.Count -gt 10) { Write-Hint ('    ' + (T 'report.and_more' ($skippedFiles.Count - 10))) }
-    Write-Hint (T 'b.report.see_log' $artifacts.ErrorLog)
+    Write-Warn (T 'b.report.important_explain')
+    foreach ($file in @($importantSkipped | Select-Object -First 10)) { Write-Text "      $file" }
+    if ($importantSkipped.Count -gt 10) { Write-Hint ('      ' + (T 'report.and_more' ($importantSkipped.Count - 10))) }
+    Write-Solution (T 'b.report.important_solution')
 }
+if ($serviceSkipped.Count -gt 0) {
+    Write-Host ''
+    Write-Hint (T 'b.report.service_explain' $serviceSkipped.Count)
+}
+if ($skippedFiles.Count -gt 0) { Write-Hint (T 'b.report.see_log' $artifacts.ErrorLog) }
 
 if (-not $finalOk) {
     $reason = if ($verifyState -eq 'failed') { T 'b.error.verify_failed' } else { Get-ArchiverExitMessage $result.ExitCode }

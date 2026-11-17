@@ -237,6 +237,19 @@ $moved = @(Get-FoldersOutsideProfile -ProfilePath 'C:\Users\Alex' -ShellFolders 
 Assert-True ($moved.Count -eq 2 -and ($moved.Path -join '|') -eq 'D:\Docs|\\nas\music' -and $moved[0].Name -eq 'Documents') "Known folders moved out of the profile are reported, those inside it are not ($(($moved.Path) -join ', '))"
 Assert-True (Reset-SleepTimer -Force) 'Windows accepts the "PC is busy, do not sleep" call'
 
+# Skipped files: service files of running programs are not a reason to worry,
+# the user's own files are.
+$split = Split-SkippedFiles -ProfilePath 'C:\Users\Alex' -Files @(
+    'C:\Users\Alex\AppData\Local\Google\Chrome\User Data\Default\Network\Cookies'
+    'C:\Users\Alex\Documents\budget.xlsx'
+    'C:\Users\Alex\AppData\Local\Microsoft\Outlook\mail.pst'
+    'C:\Users\Alex\appdata\Roaming\App\state.db'
+    'D:\Elsewhere\file.txt'
+)
+Assert-True ($split.Service.Count -eq 2 -and ($split.Important -join '|') -eq 'C:\Users\Alex\Documents\budget.xlsx|C:\Users\Alex\AppData\Local\Microsoft\Outlook\mail.pst|D:\Elsewhere\file.txt') 'Skipped files inside AppData are service files; documents and mail archives are the user''s files'
+$fullMasks = @(Get-ModeExcludeMasks -Mode Full)
+Assert-True ($fullMasks -contains 'AppData\Local\Comms\' -and $fullMasks -contains 'AppData\Local\Packages\*\SystemAppData\Helium\' -and @(Get-RestoreExcludeMasks) -contains '*\SystemAppData\Helium\') 'Registry hives of Store apps and the Mail store are neither backed up nor restored'
+
 # The list of installed programs: what winget can install again, without
 # runtimes, and with hardware utilities and trial antiviruses unticked.
 $programDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
@@ -276,7 +289,7 @@ try {
     $shown = @(Invoke-ProgramRestore -Manifest @{ programs = @{ winget = $ids; installed = @('Firefox  130.0', 'Some Tool') } } `
         -SourceUser 'alex' -ListPath $listFile 6>&1 | ForEach-Object { [string]$_ })
     $listText = if (Test-Path -LiteralPath $listFile) { Get-Content -LiteralPath $listFile -Raw } else { '' }
-    Assert-True ([bool]($shown -match '2 in total, 5 of them') -and $listText -match 'Mozilla\.Firefox' -and $listText -match 'Some Tool') 'Restore writes the saved program list to a file and says where it is'
+    Assert-True ([bool]($shown -match '5 can be installed with winget') -and $listText -match 'Mozilla\.Firefox' -and $listText -match 'Some Tool') 'Restore writes the saved program list to a file and says where it is'
     $none = @(Invoke-ProgramRestore -Manifest @{ sourceUser = 'alex' } -ListPath (Join-Path $programDir 'none.txt') 6>&1)
     Assert-True ($none.Count -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $programDir 'none.txt'))) 'An archive without a program list (older versions) adds nothing to the restore'
 } finally {
@@ -423,6 +436,22 @@ if ($SkipIntegration -or -not $archiver) {
         if ($backup.ExitCode -ne 0) { $backup.Output | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray } }
         Assert-True ($backup.ExitCode -eq 0) 'backup.ps1 completes when one file is locked'
         Assert-True ([bool]($backup.Output -match 'COMPLETED WITH WARNINGS')) 'Locked file gives "completed with warnings", not a failure'
+
+        Assert-True ([bool]($backup.Output -match 'NOT in the archive') -and [bool]($backup.Output -match 'locked\.bin')) 'A skipped file from the user''s folders is named with a warning'
+
+        # A locked service file inside AppData does not turn the result into a warning.
+        $serviceBackups = Join-Path $base 'Service Backups'
+        $serviceLock = [IO.File]::Open((Join-Path $source 'AppData\Roaming\Example App\settings.json'), 'Open', 'ReadWrite', 'None')
+        try {
+            $serviceBackup = Invoke-Script $backupScript @('-SourcePath', $source, '-Destination', $serviceBackups, '-Mode', 'Full', '-NonInteractive', '-NoVerify')
+        } finally {
+            $serviceLock.Dispose()
+        }
+        $serviceManifestFile = Get-ChildItem -LiteralPath $serviceBackups -Filter '*.manifest.json' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $serviceManifest = if ($serviceManifestFile) { Get-Content -LiteralPath $serviceManifestFile.FullName -Raw | ConvertFrom-Json -AsHashtable } else { @{} }
+        Assert-True ($serviceBackup.ExitCode -eq 0 -and [bool]($serviceBackup.Output -match 'SUCCESS') -and -not [bool]($serviceBackup.Output -match 'COMPLETED WITH WARNINGS') -and
+            [bool]($serviceBackup.Output -match 'This is normal') -and [string]$serviceManifest['result'] -eq 'SUCCESS' -and
+            [int]$serviceManifest['skippedFileCount'] -eq 1 -and [int]$serviceManifest['skippedUserFileCount'] -eq 0) 'A locked service file in AppData leaves the result a success and is still recorded'
 
         $archive = Get-ChildItem -LiteralPath $backups -Filter '*.7z' -File -ErrorAction SilentlyContinue | Select-Object -First 1
         $manifestFile = Get-ChildItem -LiteralPath $backups -Filter '*.manifest.json' -File -ErrorAction SilentlyContinue | Select-Object -First 1

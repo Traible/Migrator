@@ -44,9 +44,10 @@ same, another or a brand-new account.
   *after* exclusions.
 - **Cloud-aware.** OneDrive / iCloud Drive / Dropbox folders with cloud-only
   files are detected, so the backup does not silently download tens of GB.
-- **Honest results.** A file locked by a running program gives "completed with
-  warnings" and a list of skipped files, not a red failure; a damaged archive
-  is always a failure.
+- **Honest results.** Service files of running programs (cookies, databases
+  in `AppData`) are skipped quietly: the result stays a success. A skipped
+  file from your own folders gives "completed with warnings" and is named; a
+  damaged archive is always a failure.
 - **Restore anywhere.** Current user, another existing user or a new local
   account; from an archive or directly from `Windows.old`.
 - **Brings the programs back.** The list of installed programs is saved with
@@ -241,7 +242,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 154 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 158 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 
