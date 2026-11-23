@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.6.0 — 2026-11-23
+
+### Changed
+
+- **Data that programs download again is no longer copied.** Many programs keep re-downloadable data under names without "Cache", which the exclusion masks did not catch. Left out now, in Full mode too:
+  - the on-device AI models of Chrome, Edge, Brave and other Chromium browsers (`OptGuideOnDeviceModel`, `OptGuideOnDeviceClassifierModel`, `OnDeviceHeadSuggestModel`);
+  - the music cache of Spotify (`AppData\Local\Spotify\Data`, `Storage`); downloaded offline tracks are tied to the device and cannot be used on another PC anyway;
+  - Claude Desktop: the downloaded Claude Code programs (`claude-code`, `claude-code-vm`) and the downloaded VM image in `vm_bundles\claudevm.bundle`. `sessiondata.vhdx` next to the image holds the user's session folders and is still copied.
+
+  Every entry was checked against the program's own documentation or the open [BleachBit](https://github.com/bleachbit/bleachbit) cleaner definitions. On the PC where this was measured, a Full backup went from 65.5 GB to 44.7 GB.
+
 ## 2.5.2 — 2026-11-17
 
 Hardening after an outside review of 2.5.1.

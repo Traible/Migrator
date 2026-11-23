@@ -13,7 +13,7 @@ hundreds of thousands of small files in Explorer - and restores them into the
 same, another or a brand-new account.
 
 ```text
-  Migrator  v2.5.2
+  Migrator  v2.6.0
   ====================================================================
   Back up and restore a Windows user profile
 
@@ -40,7 +40,8 @@ same, another or a brand-new account.
   2 GB / 40,000 files on an NVMe drive: backup with verification in 8 s,
   restore in 30 s.
 - **Knows what not to copy.** Caches, temp files, crash dumps, registry hives
-  and junctions are skipped; the size shown before the start is the size
+  and junctions are skipped, and so is data that programs download again by
+  themselves (browser AI models, the Spotify cache, Claude's VM image); the size shown before the start is the size
   *after* exclusions.
 - **Cloud-aware.** OneDrive / iCloud Drive / Dropbox folders with cloud-only
   files are detected, so the backup does not silently download tens of GB.
@@ -298,7 +299,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 184 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 185 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

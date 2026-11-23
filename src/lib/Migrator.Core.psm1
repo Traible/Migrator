@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.5.2'
+        ToolVersion         = '2.6.0'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
@@ -91,6 +91,25 @@ function Get-DefaultConfig {
             # (the same kind of file as NTUSER.DAT).
             'AppData\Local\Comms\'
             'AppData\Local\Packages\*\SystemAppData\Helium\'
+            # Downloaded again by the program itself, under names without
+            # "Cache". Each entry was checked against the program's own
+            # documentation or the open BleachBit cleaner definitions.
+            #   On-device AI models of Chrome, Edge, Brave and other Chromium browsers
+            '*\User Data\*OptGuideOnDeviceModel\'
+            '*\User Data\*OptGuideOnDeviceClassifierModel\'
+            '*\User Data\*OnDeviceHeadSuggestModel\'
+            #   Spotify's music cache (offline tracks are tied to the device anyway)
+            'AppData\Local\Spotify\Data\'
+            'AppData\Local\Spotify\Storage\'
+            #   Claude Desktop: the downloaded Claude Code programs and the
+            #   downloaded VM image. sessiondata.vhdx next to the image holds
+            #   the user's session folders and is kept.
+            'AppData\*Claude*\claude-code\'
+            'AppData\*Claude*\claude-code-vm\'
+            'AppData\*Claude*\vm_bundles\claudevm.bundle\*rootfs.vhdx*'
+            'AppData\*Claude*\vm_bundles\claudevm.bundle\*initrd*'
+            'AppData\*Claude*\vm_bundles\claudevm.bundle\*vmlinuz*'
+            'AppData\*Claude*\vm_bundles\claudevm.bundle\*smol-bin.vhdx*'
             '*\*.tmp'
             '*\~$*'
             '*\*dmp'

@@ -70,7 +70,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Sel
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.5.2') 'Tool version is 2.5.2'
+Assert-True ([string]$config.ToolVersion -eq '2.6.0') 'Tool version is 2.6.0'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -111,7 +111,7 @@ Write-Host '3. Exclusion masks' -ForegroundColor Yellow
 
 $fullMasks = @(Get-ModeExcludeMasks -Mode Full)
 $standardMasks = @(Get-ModeExcludeMasks -Mode Standard)
-Assert-True ($fullMasks.Count -ge 20 -and $fullMasks.Count -le 40) "Full exclusion list is compact: $($fullMasks.Count)"
+Assert-True ($fullMasks.Count -ge 20 -and $fullMasks.Count -le 60) "Full exclusion list is compact: $($fullMasks.Count)"
 Assert-True ($standardMasks.Count -gt $fullMasks.Count) 'Standard mode adds exclusions'
 Assert-True ($fullMasks -contains 'AppData\*Cache*\') 'AppData cache folders are excluded with one folder mask'
 Assert-True ($fullMasks -notcontains '*\node_modules\') 'Developer caches are kept in Full mode by default'
@@ -433,6 +433,38 @@ try {
 } finally {
     Remove-Item Env:MIGRATOR_TEST_RELEASE_JSON -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $selfDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Data that programs download again is left out; the user's data next to it is kept.
+$junkDir = Join-Path $env:LOCALAPPDATA ('MigratorSmokeTest-' + [guid]::NewGuid().ToString('N'))
+try {
+    $vm = 'AppData\Local\Claude-Data\claude_x\vm_bundles\claudevm.bundle'
+    foreach ($relative in @(
+        'AppData\Local\Google\Chrome\User Data\OptGuideOnDeviceModel\weights.bin'
+        'AppData\Local\Microsoft\Edge\User Data\Default\OptGuideOnDeviceModel\model.bin'
+        'AppData\Local\Google\Chrome\User Data\OnDeviceHeadSuggestModel\model.bin'
+        'AppData\Local\Spotify\Data\0a\track.file'
+        'AppData\Local\Claude-Data\claude_x\claude-code\2.1.330\claude.exe'
+        'AppData\Local\Claude-Data\claude_x\claude-code-vm\2.1.330\claude'
+        "$vm\rootfs.vhdx", "$vm\rootfs.vhdx.zst", "$vm\.rootfs.vhdx.origin", "$vm\vmlinuz", "$vm\initrd", "$vm\smol-bin.vhdx"
+        "$vm\sessiondata.vhdx"
+        'AppData\Local\Claude-Data\claude_x\local-agent-mode-sessions\chat.json'
+        'AppData\Local\Google\Chrome\User Data\Default\Bookmarks'
+        'AppData\Local\Spotify\Users\me\prefs'
+        'Documents\Spotify\Data\notes.txt'
+    )) {
+        $path = Join-Path $junkDir $relative
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+        Set-Content -LiteralPath $path -Value 'x' -NoNewline
+    }
+    $junkScan = Measure-ProfileTree -Path $junkDir -ExcludeMasks (Get-ModeExcludeMasks -Mode Full)
+    $kept = @(Get-ChildItem -LiteralPath $junkDir -Recurse -File | ForEach-Object { $_.FullName.Substring($junkDir.Length + 1) } |
+        Where-Object { $path = $_; -not (@(@($junkScan.ExcludedDirectories) + @($junkScan.ExcludedFiles)) | Where-Object { $path -eq $_ -or $path.StartsWith("$_\", [StringComparison]::OrdinalIgnoreCase) }) } | Sort-Object)
+    $expected = @("$vm\sessiondata.vhdx", 'AppData\Local\Claude-Data\claude_x\local-agent-mode-sessions\chat.json',
+        'AppData\Local\Google\Chrome\User Data\Default\Bookmarks', 'AppData\Local\Spotify\Users\me\prefs', 'Documents\Spotify\Data\notes.txt') | Sort-Object
+    Assert-True ($junkScan.Files -eq 5 -and ($kept -join '|') -eq ($expected -join '|')) "Browser AI models, the Spotify cache and Claude's downloaded programs and VM image are left out; bookmarks, settings and session data are kept ($($kept -join ', '))"
+} finally {
+    Remove-Item -LiteralPath $junkDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # An archive with hostile names must not write outside the target folder.
