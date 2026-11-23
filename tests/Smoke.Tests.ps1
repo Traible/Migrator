@@ -38,6 +38,11 @@ function Invoke-Script {
     return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = @($output | ForEach-Object { [string]$_ }) }
 }
 
+# restore.ps1 writes its logs into the Logs folder of this Migrator; the
+# files that appear during the run are removed at the end.
+$logFolder = Join-Path $toolRoot 'Logs'
+$logsBefore = @(Get-ChildItem -LiteralPath $logFolder -File -ErrorAction SilentlyContinue | ForEach-Object Name)
+
 Write-Host ''
 Write-Host 'Migrator smoke tests' -ForegroundColor Cyan
 Write-Host ('=' * 60) -ForegroundColor DarkCyan
@@ -867,6 +872,14 @@ if ($SkipIntegration -or -not $archiver) {
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+Get-ChildItem -LiteralPath $logFolder -File -ErrorAction SilentlyContinue |
+    Where-Object { $logsBefore -notcontains $_.Name -and $_.Name -match '^(restore|programs)-' } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+if ($logsBefore.Count -eq 0 -and (Test-Path -LiteralPath $logFolder) -and
+    @(Get-ChildItem -LiteralPath $logFolder -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+    Remove-Item -LiteralPath $logFolder -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host ''
 Write-Host ('=' * 60) -ForegroundColor DarkCyan
 Write-Host ("Passed: {0}   Failed: {1}" -f $script:Passed, $script:Failed) -ForegroundColor $(if ($script:Failed -eq 0) { 'Green' } else { 'Red' })

@@ -3,10 +3,8 @@
 Tools/
 
 # Generated data
-Backups/*
-!Backups/.gitkeep
-Logs/*
-!Logs/.gitkeep
+Backups/
+Logs/
 dist/
 
 # Per-user settings (language choice etc.)
