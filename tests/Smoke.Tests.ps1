@@ -75,7 +75,7 @@ foreach ($module in 'Core', 'UI', 'Archive', 'Browsers', 'Kit', 'Programs', 'Sel
 }
 
 $config = Get-MigratorConfig
-Assert-True ([string]$config.ToolVersion -eq '2.6.0') 'Tool version is 2.6.0'
+Assert-True ([string]$config.ToolVersion -eq '2.6.1') 'Tool version is 2.6.1'
 Assert-True (-not [bool]$config.VerifyBeforeRestore) 'Separate pre-restore verification is off by default'
 
 $localeRoot = Join-Path $toolRoot 'src\locale'
@@ -316,6 +316,13 @@ try {
     $rowText = @($rows | ForEach-Object { '{0}|{1}|{2}' -f $_.Id, $_.Version, $_.Available }) -join ' '
     Assert-True ($rowText -eq 'Git.Git|2.54.0|2.56.0.4 Unity.Unity.6000|6000.4.5f1|6000.6.8f1 Vendor.LongName|< 2.0|2.5 Mozilla.Firefox.ru|130.0|131.0.2' -and $rows[1].Name -eq 'Unity 6000.4.5f1') "Update list: rows of the winget table are read, the footer is not ($rowText)"
     Assert-True (@(ConvertFrom-WingetUpgradeText -Text "No installed package found matching input criteria.`r`n").Count -eq 0 -and @(ConvertFrom-WingetUpgradeText -Text '').Count -eq 0) 'Update list: no table means nothing to update'
+
+    # A failed update says what to do when winget's code has a known cause.
+    $techHint = Get-WingetFailureHint -Code -1978335090 -Id 'LizardByte.Sunshine'
+    Assert-True ($techHint -match 'winget uninstall --id LizardByte\.Sunshine --exact' -and $techHint -match 'winget install --id LizardByte\.Sunshine --exact') 'Update failure: another installer type gives the reinstall commands for that program'
+    Assert-True ([bool](Get-WingetFailureHint -Code -1978335226 -Id 'OBSProject.OBSStudio') -and -not (Get-WingetFailureHint -Code 1 -Id 'X.Y')) 'Update failure: a failed installer gets a hint, an unknown code only its number'
+    # Epic Online Services is updated by the Epic Games Launcher; winget fails on it.
+    Assert-True (@((Get-MigratorConfig).UpdateRecommended) -notcontains 'EpicGames.EpicOnlineServices') 'Update list: Epic Online Services is not recommended for updates'
 
     $upgradeFile = Join-Path $programDir 'upgrade.txt'
     [IO.File]::WriteAllText($upgradeFile, $upgradeText, [Text.UTF8Encoding]::new($false))

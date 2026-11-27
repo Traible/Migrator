@@ -363,6 +363,8 @@
     'u.failed_one' = '{0}: not updated (winget code {1})'
     'u.summary' = 'Programs updated: {0} of {1}.'
     'u.failed_list' = 'Not updated: {0}. Try again later, or update them by hand.'
+    'w.hint.technology' = 'This copy was installed by another type of installer, so winget cannot update it in place. Save the program''s settings, then reinstall it: winget uninstall --id {0} --exact, then winget install --id {0} --exact --source winget'
+    'w.hint.installer' = 'The program''s own installer failed. Close the program and everything that may use its files (a game, a browser, a video call) and try again. If it fails again, run the update as administrator or update the program from its own site.'
     'u.nothing' = 'Nothing was updated.'
     'u.error.need_scope' = 'A non-interactive run needs -Scope Recommended|All or -ListOnly.'
     'p.file.all' = 'Installed apps as Windows listed them on the old PC (apps from the Store are not in this list):'

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.1 — 2026-11-27
+
+### Changed
+
+- **A failed program update says what to do.** Under the line with the winget code, Migrator now adds a hint for the causes it knows:
+  - the new version uses another installer type than the installed one (winget code `-1978335090`, `0x8A15008E`), so winget cannot update it in place: the hint gives the `winget uninstall` and `winget install` commands for that program and reminds you to save its settings first;
+  - the program's own installer failed (winget code `-1978335226`, `0x8A150006`): close the program and everything that may use its files, try again, then as administrator or from the program's site.
+- **Epic Online Services is no longer recommended for updates.** It is a component kept up to date by the Epic Games Launcher, already hidden from the program list, and winget cannot update it in place.
+
 ## 2.6.0 — 2026-11-23
 
 ### Changed

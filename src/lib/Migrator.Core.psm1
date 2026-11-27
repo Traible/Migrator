@@ -29,7 +29,7 @@ function Get-MigratorRoot {
 
 function Get-DefaultConfig {
     [ordered]@{
-        ToolVersion         = '2.6.0'
+        ToolVersion         = '2.6.1'
         # auto | en | ru   (auto follows the Windows display language)
         Language            = 'auto'
         DefaultMode         = 'Full'
@@ -222,7 +222,7 @@ function Get-DefaultConfig {
             'Bitwarden.Bitwarden', 'KeePassXCTeam.KeePassXC', 'DominikReichl.KeePass'
             'Dropbox.Dropbox', 'Google.GoogleDrive', 'Microsoft.OneDrive'
             # game launchers
-            'Valve.Steam', 'EpicGames.EpicGamesLauncher', 'EpicGames.EpicOnlineServices', 'Blizzard.BattleNet', 'GOG.Galaxy', 'Ubisoft.Connect'
+            'Valve.Steam', 'EpicGames.EpicGamesLauncher', 'Blizzard.BattleNet', 'GOG.Galaxy', 'Ubisoft.Connect'
             # tools that keep their commands and files compatible
             'Git.Git', 'GitHub.cli', 'GitHub.GitHubDesktop', 'Microsoft.VisualStudioCode', 'Anthropic.Claude'
             # runtimes: the id carries the major version, so an update stays within it

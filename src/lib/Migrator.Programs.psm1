@@ -156,6 +156,24 @@ function Get-ProgramChoices {
     return @($result)
 }
 
+function Get-WingetFailureHint {
+    # What to do about a winget exit code that has a known cause; '' for the
+    # rest (the code is shown anyway).
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][int]$Code, [Parameter(Mandatory)][string]$Id)
+
+    switch ($Code) {
+        # 0x8A15008E: the new version uses another installer type (MSI vs EXE,
+        # per-user vs machine) than the installed one; winget will not upgrade
+        # across that.
+        -1978335090 { return (T 'w.hint.technology' $Id) }
+        # 0x8A150006: winget started the program's own installer, and that
+        # installer reported a failure.
+        -1978335226 { return (T 'w.hint.installer') }
+    }
+    return ''
+}
+
 function Install-WingetPrograms {
     # Installs the packages one by one, so one failure does not stop the rest
     # and every program gets its own line in the result.
@@ -184,6 +202,8 @@ function Install-WingetPrograms {
         $ok = ($code -eq 0 -or $code -eq -1978335189)
         if (-not $ok) {
             Write-Warn $(if ($Verb -eq 'upgrade') { T 'u.failed_one' $id $code } else { T 'p.failed_one' $id $code })
+            $hint = Get-WingetFailureHint -Code $code -Id $id
+            if ($hint) { Write-Solution $hint }
             $failed.Add($id)
         }
         if ($Log) { & $Log "Program $id`: winget exit $code" }
@@ -481,5 +501,6 @@ Export-ModuleMember -Function @(
     'Get-InstalledProgramList'
     'Get-ProgramChoices'
     'Install-WingetPrograms'
+    'Get-WingetFailureHint'
     'Invoke-ProgramRestore'
 )
