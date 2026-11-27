@@ -327,16 +327,13 @@ try {
     $notRecommended = @('EpicGames.EpicOnlineServices', 'OBSProject.OBSStudio', 'LizardByte.Sunshine' | Where-Object { @((Get-MigratorConfig).UpdateRecommended) -contains $_ })
     Assert-True ($notRecommended.Count -eq 0) "Update list: programs that fail under winget are not recommended ($($notRecommended -join ', '))"
 
-    # Failed updates are counted per program and version.
+    # Failed updates are counted per program, whatever the version.
     $git = [pscustomobject]@{ Id = 'Git.Git'; Available = '2.56.0.4' }
-    $record = Update-UpdateFailures -Failures @{} -Attempted @($git) -Failed @('Git.Git') -StillAvailable @('Git.Git')
-    $record = Update-UpdateFailures -Failures $record -Attempted @($git) -Failed @('Git.Git') -StillAvailable @('Git.Git')
-    $twice = $record['Git.Git'].count
-    $newer = Update-UpdateFailures -Failures $record -Attempted @([pscustomobject]@{ Id = 'Git.Git'; Available = '2.57.0' }) -Failed @('Git.Git') -StillAvailable @('Git.Git')
-    $fixed = Update-UpdateFailures -Failures $record -Attempted @($git) -Failed @() -StillAvailable @('Git.Git')
-    $gone = Update-UpdateFailures -Failures $record -Attempted @() -StillAvailable @('Mozilla.Firefox.ru')
-    Assert-True ($twice -eq 2 -and $newer['Git.Git'].count -eq 1 -and $newer['Git.Git'].version -eq '2.57.0' -and
-        -not $fixed.ContainsKey('Git.Git') -and $gone.Count -eq 0) 'Update failures: same version counts up; a newer version, a success or a vanished update start over'
+    $record = Update-UpdateFailures -Failures @{} -Attempted @($git) -Failed @('Git.Git')
+    $record = Update-UpdateFailures -Failures $record -Attempted @([pscustomobject]@{ Id = 'Git.Git'; Available = '2.57.0' }) -Failed @('Git.Git')
+    $kept = Update-UpdateFailures -Failures $record -Attempted @()
+    $fixed = Update-UpdateFailures -Failures $record -Attempted @($git) -Failed @()
+    Assert-True ($record['Git.Git'].count -eq 2 -and $kept['Git.Git'].count -eq 2 -and -not $fixed.ContainsKey('Git.Git')) 'Update failures: every failure counts, whatever the version; only a successful update forgets them'
 
     $upgradeFile = Join-Path $programDir 'upgrade.txt'
     [IO.File]::WriteAllText($upgradeFile, $upgradeText, [Text.UTF8Encoding]::new($false))
@@ -344,11 +341,11 @@ try {
     $upgrades = Get-WingetUpgrades -Failures @{}
     $recommendedIds = @(@($upgrades) | Where-Object Recommended | ForEach-Object Id) -join ','
     Assert-True (@($upgrades).Count -eq 4 -and $recommendedIds -eq 'Git.Git,Mozilla.Firefox.ru') "Update list: everyday programs are recommended; Unity and unknown programs are not ($recommendedIds)"
-    $skippedRun = Get-WingetUpgrades -Failures @{ 'Git.Git' = @{ version = '2.56.0.4'; count = 2 }; 'Mozilla.Firefox.ru' = @{ version = '130.5'; count = 2 } }
+    $skippedRun = Get-WingetUpgrades -Failures @{ 'Git.Git' = @{ version = '2.40.0'; count = 2 }; 'Mozilla.Firefox.ru' = @{ version = '130.5'; count = 1 } }
     $skippedRun = @($skippedRun)
     $skippedIds = @($skippedRun | Where-Object Skipped | ForEach-Object Id) -join ','
     $stillRecommended = @($skippedRun | Where-Object Recommended | ForEach-Object Id) -join ','
-    Assert-True ($skippedIds -eq 'Git.Git' -and $stillRecommended -eq 'Mozilla.Firefox.ru') "Update list: a version that failed twice is skipped, a newer one is offered again ($skippedIds / $stillRecommended)"
+    Assert-True ($skippedIds -eq 'Git.Git' -and $stillRecommended -eq 'Mozilla.Firefox.ru') "Update list: a program that failed twice is no longer recommended, one failure is not enough ($skippedIds / $stillRecommended)"
 
     $updateScript = Join-Path $toolRoot 'src\update.ps1'
     $listed = Invoke-Script $updateScript @('-ListOnly', '-NonInteractive')
