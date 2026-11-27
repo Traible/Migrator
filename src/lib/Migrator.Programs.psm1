@@ -186,6 +186,7 @@ function Install-WingetPrograms {
 
     $winget = Get-WingetPath
     $failed = [System.Collections.Generic.List[string]]::new()
+    $hinted = [System.Collections.Generic.List[string]]::new()
     $number = 0
     foreach ($id in $Ids) {
         $number++
@@ -203,13 +204,61 @@ function Install-WingetPrograms {
         if (-not $ok) {
             Write-Warn $(if ($Verb -eq 'upgrade') { T 'u.failed_one' $id $code } else { T 'p.failed_one' $id $code })
             $hint = Get-WingetFailureHint -Code $code -Id $id
-            if ($hint) { Write-Solution $hint }
+            if ($hint) { Write-Solution $hint; $hinted.Add($id) }
             $failed.Add($id)
         }
         if ($Log) { & $Log "Program $id`: winget exit $code" }
         [void](Reset-SleepTimer)
     }
-    return [pscustomobject]@{ Installed = $Ids.Count - $failed.Count; Failed = @($failed) }
+    return [pscustomobject]@{ Installed = $Ids.Count - $failed.Count; Failed = @($failed); Hinted = @($hinted) }
+}
+
+# After this many failed updates of the same version a program is skipped.
+$script:SkipAfterFailures = 2
+
+function Get-UpdateFailures {
+    # Failed updates remembered by this copy (UpdateFailures in user.json):
+    # program id -> @{ version = the version that failed; count = how many times }.
+    [CmdletBinding()]
+    param()
+    $result = @{}
+    $saved = (Get-MigratorConfig)['UpdateFailures']
+    if ($saved -is [System.Collections.IDictionary]) {
+        foreach ($id in $saved.Keys) {
+            $entry = $saved[$id]
+            if ($entry -is [System.Collections.IDictionary] -and $entry['version']) {
+                $result[[string]$id] = @{ version = [string]$entry['version']; count = [int]$entry['count'] }
+            }
+        }
+    }
+    return $result
+}
+
+function Update-UpdateFailures {
+    # The failure record after an update run: a failure of the same version
+    # counts up, a failure of a newer version starts again at 1, a success
+    # forgets the program, and so does a program that no longer has an update.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$Failures,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Attempted,
+        [AllowEmptyCollection()][string[]]$Failed = @(),
+        [AllowEmptyCollection()][string[]]$StillAvailable = @()
+    )
+    $next = @{}
+    foreach ($id in $Failures.Keys) {
+        if ($StillAvailable -contains $id) { $next[$id] = $Failures[$id] }
+    }
+    foreach ($item in $Attempted) {
+        if ($Failed -contains $item.Id) {
+            $old = $next[$item.Id]
+            $count = if ($old -and $old.version -eq $item.Available) { $old.count + 1 } else { 1 }
+            $next[$item.Id] = @{ version = [string]$item.Available; count = $count }
+        } else {
+            $next.Remove($item.Id)
+        }
+    }
+    return $next
 }
 
 function Invoke-ProgramRestore {
@@ -335,12 +384,16 @@ function ConvertFrom-WingetUpgradeText {
 function Get-WingetUpgrades {
     # Programs with a newer version in winget, or $null when winget cannot be
     # asked. Each one carries Recommended: its id is in the UpdateRecommended
-    # list of everyday programs that update without surprises.
+    # list of everyday programs that update without surprises. Skipped: this
+    # copy failed to update this very version twice (it is then never
+    # Recommended); a newer version is tried again.
     # The array comes back as one object: assign the result, do not wrap the
     # call in @(). MIGRATOR_TEST_WINGET_UPGRADE replaces the call with a saved
-    # output for the tests.
+    # output for the tests; -Failures replaces the saved failure record.
     [CmdletBinding()]
-    param([int]$TimeoutSeconds = 180)
+    param([int]$TimeoutSeconds = 180, [hashtable]$Failures)
+
+    if (-not $PSBoundParameters.ContainsKey('Failures')) { $Failures = Get-UpdateFailures }
 
     $text = $null
     if ($env:MIGRATOR_TEST_WINGET_UPGRADE) {
@@ -370,7 +423,11 @@ function Get-WingetUpgrades {
 
     $masks = (Get-MigratorConfig).UpdateRecommended
     $found = @(ConvertFrom-WingetUpgradeText -Text $text | ForEach-Object {
-        $_ | Add-Member -NotePropertyName Recommended -NotePropertyValue (Test-ProgramMask -Id $_.Id -Masks $masks) -PassThru
+        $failure = $Failures[$_.Id]
+        $skipped = [bool]($failure -and $failure.version -eq $_.Available -and $failure.count -ge $script:SkipAfterFailures)
+        $recommended = (-not $skipped) -and (Test-ProgramMask -Id $_.Id -Masks $masks)
+        $_ | Add-Member -NotePropertyName Recommended -NotePropertyValue $recommended -PassThru |
+             Add-Member -NotePropertyName Skipped -NotePropertyValue $skipped -PassThru
     } | Sort-Object Id)
     return , $found
 }
@@ -403,7 +460,10 @@ function Invoke-ProgramUpdate {
     if ($upgrades.Count -eq 0) { Write-Ok (T 'u.none'); return $true }
 
     $recommended = @($upgrades | Where-Object { $_.Recommended })
-    $other = @($upgrades | Where-Object { -not $_.Recommended })
+    $other = @($upgrades | Where-Object { -not $_.Recommended -and -not $_.Skipped })
+    $skippedItems = @($upgrades | Where-Object { $_.Skipped })
+    # "Everything" leaves out what already failed twice; it can still be ticked by hand.
+    $everything = @($recommended + $other)
     $idWidth = ($upgrades | ForEach-Object { $_.Id.Length } | Measure-Object -Maximum).Maximum
     $versionWidth = ($upgrades | ForEach-Object { $_.Version.Length } | Measure-Object -Maximum).Maximum
     $describe = { param($item) '{0}  {1} -> {2}' -f $item.Id.PadRight($idWidth), $item.Version.PadRight($versionWidth), $item.Available }
@@ -417,6 +477,12 @@ function Invoke-ProgramUpdate {
         Write-Host ''
         Write-Warn (T 'u.other_title' $other.Count)
         foreach ($item in $other) { Write-Hint ('     ' + (& $describe $item)) }
+    }
+    if ($skippedItems.Count -gt 0) {
+        Write-Host ''
+        Write-Warn (T 'u.skipped_title' $skippedItems.Count)
+        foreach ($item in $skippedItems) { Write-Hint ('     ' + (& $describe $item)) }
+        Write-Solution (T 'u.skipped_solution')
     }
     Write-Host ''
     Write-Hint (T 'u.source_note')
@@ -439,7 +505,9 @@ function Invoke-ProgramUpdate {
                 $items.Add((New-MenuItem -Value 'Recommended' -Label (T 'u.menu.recommended' $recommended.Count) -Hint (T 'u.menu.recommended.hint')))
             }
             $items.Add((New-MenuItem -Value 'Choose' -Label (T 'u.menu.choose') -Hint (T 'u.menu.choose.hint')))
-            $items.Add((New-MenuItem -Value 'All' -Label (T 'u.menu.all' $upgrades.Count) -Hint (T 'u.menu.all.hint')))
+            if ($everything.Count -gt 0) {
+                $items.Add((New-MenuItem -Value 'All' -Label (T 'u.menu.all' $everything.Count) -Hint (T 'u.menu.all.hint')))
+            }
             if (-not $isAdmin) { $items.Add((New-MenuItem -Value 'Admin' -Label (T 'm.menu.admin') -Key 'A')) }
             $items.Add((New-MenuItem -Value 'Cancel' -Label (T 'ui.cancel') -Key 'Q'))
             $choice = Show-Menu -Title (T 'u.menu.title') -Items @($items) -AllowCancel
@@ -462,9 +530,9 @@ function Invoke-ProgramUpdate {
                 return 'Restarted'
             }
             'Recommended' { $picked = @($recommended.Id) }
-            'All'         { $picked = @($upgrades.Id) }
+            'All'         { $picked = @($everything.Id) }
             'Choose' {
-                $checkItems = @(foreach ($item in @($recommended + $other)) {
+                $checkItems = @(foreach ($item in @($recommended + $other + $skippedItems)) {
                     New-CheckItem -Value $item.Id -Label (& $describe $item) -Checked ([bool]$item.Recommended)
                 })
                 $ticked = Show-CheckList -Title (T 'u.menu.choose') -Items $checkItems
@@ -475,18 +543,31 @@ function Invoke-ProgramUpdate {
         Write-Host ''
         if (-not (Read-YesNo (T 'u.confirm' $picked.Count) $false)) { Write-Hint (T 'u.nothing'); return $true }
     } else {
-        $picked = if ($Scope -eq 'All') { @($upgrades.Id) } elseif ($Scope -eq 'Recommended') { @($recommended.Id) } else { @() }
+        $picked = if ($Scope -eq 'All') { @($everything.Id) } elseif ($Scope -eq 'Recommended') { @($recommended.Id) } else { @() }
         if ($picked.Count -eq 0) { Write-Hint (T 'u.nothing'); return $true }
     }
 
     $result = Install-WingetPrograms -Ids $picked -Verb upgrade
+
+    # Remember what failed, so that a program failing again and again is
+    # skipped instead of costing time on every run. A read-only folder only
+    # means the record is not kept.
+    $attempted = @($upgrades | Where-Object { $picked -contains $_.Id })
+    $record = Update-UpdateFailures -Failures (Get-UpdateFailures) -Attempted $attempted `
+        -Failed @($result.Failed) -StillAvailable @($upgrades.Id)
+    try { Set-MigratorUserSetting -Name 'UpdateFailures' -Value $record } catch { }
+
     Write-Host ''
     if ($result.Failed.Count -eq 0) {
         Write-Ok (T 'u.summary' $result.Installed $picked.Count)
         return $true
     }
     Write-Warn (T 'u.summary' $result.Installed $picked.Count)
-    Write-Solution (T 'u.failed_list' ($result.Failed -join ', '))
+    $failedText = $result.Failed -join ', '
+    $allHinted = @($result.Failed | Where-Object { $result.Hinted -notcontains $_ }).Count -eq 0
+    Write-Solution $(if ($allHinted) { T 'u.failed_list_hinted' $failedText } else { T 'u.failed_list' $failedText })
+    $nowSkipped = @($record.Keys | Where-Object { $record[$_].count -ge $script:SkipAfterFailures })
+    if ($nowSkipped.Count -gt 0) { Write-Hint (T 'u.skipped_next' ($nowSkipped -join ', ')) }
     return $false
 }
 
@@ -502,5 +583,7 @@ Export-ModuleMember -Function @(
     'Get-ProgramChoices'
     'Install-WingetPrograms'
     'Get-WingetFailureHint'
+    'Get-UpdateFailures'
+    'Update-UpdateFailures'
     'Invoke-ProgramRestore'
 )

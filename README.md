@@ -180,7 +180,16 @@ have a newer version and shows them in two groups:
 Then you choose: *Recommended only*, *Choose from the list* (check marks,
 recommended ones ticked) or *Everything*. Nothing is updated without a typed
 `y`. Programs are updated one by one; the ones that failed are named at the
-end. The recommended set is a setting, `UpdateRecommended`.
+end, with a hint under each one whose winget code has a known cause (for
+example, the reinstall commands when a new version uses another installer
+type). The recommended set is a setting, `UpdateRecommended`.
+
+A program that failed to update twice with the same version is **skipped**
+by this copy of Migrator: it is shown in its own group, left out of
+*Recommended* and *Everything*, and can still be ticked in *Choose from the
+list*. When a newer version comes out, it is tried again; a successful update
+forgets the failures. The record is kept in `src\config\user.json`
+(`UpdateFailures`).
 
 Only programs `winget` knows are updated, and `winget` must be present
 (it is not in Windows Sandbox or LTSC). Drivers are not touched.
@@ -299,7 +308,7 @@ keeps a `Documents\CachedProjects` folder.
 ## Development
 
 ```bat
-pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 188 checks, about a minute
+pwsh -NoProfile -File tests\Smoke.Tests.ps1     :: 190 checks, about a minute
 pwsh -NoProfile -File build\New-Release.ps1     :: dist\Migrator-<version>.zip
 ```
 

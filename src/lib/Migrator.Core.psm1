@@ -204,7 +204,7 @@ function Get-DefaultConfig {
             'SlackTechnologies.Slack', 'Mozilla.Thunderbird*'
             # players, codecs, media tools
             'VideoLAN.VLC', 'AIMP.AIMP', 'CodecGuide.K-LiteCodecPack.*', 'clsid2.mpc-hc', 'Daum.PotPlayer', 'Spotify.Spotify'
-            'OBSProject.OBSStudio', 'HandBrake.HandBrake', 'Audacity.Audacity', 'OpenMedia.4KVideoDownloaderPlus'
+            'HandBrake.HandBrake', 'Audacity.Audacity', 'OpenMedia.4KVideoDownloaderPlus'
             # pictures and documents
             'IrfanSkiljan.IrfanView', 'XnSoft.XnView*', 'GIMP.GIMP*', 'KDE.Krita', 'Inkscape.Inkscape', 'dotPDN.PaintDotNet'
             'Adobe.Acrobat.Reader.*', 'SumatraPDF.SumatraPDF', 'Foxit.FoxitReader', 'TheDocumentFoundation.LibreOffice'
@@ -218,7 +218,7 @@ function Get-DefaultConfig {
             'Futuremark.FuturemarkSystemInfo'
             # remote access, passwords, cloud
             'TeamViewer.TeamViewer', 'AnyDeskSoftwareGmbH.AnyDesk', 'Tailscale.Tailscale', 'Google.ChromeRemoteDesktopHost'
-            'LizardByte.Sunshine', 'Iriun.IriunWebcam'
+            'Iriun.IriunWebcam'
             'Bitwarden.Bitwarden', 'KeePassXCTeam.KeePassXC', 'DominikReichl.KeePass'
             'Dropbox.Dropbox', 'Google.GoogleDrive', 'Microsoft.OneDrive'
             # game launchers

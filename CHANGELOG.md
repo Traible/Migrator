@@ -7,7 +7,10 @@
 - **A failed program update says what to do.** Under the line with the winget code, Migrator now adds a hint for the causes it knows:
   - the new version uses another installer type than the installed one (winget code `-1978335090`, `0x8A15008E`), so winget cannot update it in place: the hint gives the `winget uninstall` and `winget install` commands for that program and reminds you to save its settings first;
   - the program's own installer failed (winget code `-1978335226`, `0x8A150006`): close the program and everything that may use its files, try again, then as administrator or from the program's site.
-- **Epic Online Services is no longer recommended for updates.** It is a component kept up to date by the Epic Games Launcher, already hidden from the program list, and winget cannot update it in place.
+
+  When every failed program has such a hint, the summary no longer says "try again later" and points to the hints instead.
+- **A program that keeps failing is skipped.** When the update of the same version fails twice, this copy of Migrator skips the program: it is shown in a group of its own, left out of *Recommended* and *Everything*, and can still be ticked in *Choose from the list*. A newer version is tried again, and a successful update forgets the failures. The record is `UpdateFailures` in `src\config\user.json`.
+- **Not recommended for updates any more:** Epic Online Services (kept up to date by the Epic Games Launcher, already hidden from the program list), OBS Studio (its installer fails under winget even as administrator, while OBS updates itself without problems) and Sunshine (the new version uses another installer type, so winget cannot update it in place). They are still offered in *Choose from the list* and *Everything*.
 
 ## 2.6.0 — 2026-11-23
 
